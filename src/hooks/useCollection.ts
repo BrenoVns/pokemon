@@ -38,6 +38,8 @@ export interface CollectionApi {
   updateCard: (id: string, patch: CardPatch) => string
   deleteCard: (id: string) => void
   setPhoto: (id: string, photo: Blob | null) => Promise<void>
+  /** Apaga todas as cartas e fotos deste aparelho. */
+  clearAll: () => Promise<void>
   /** Importa um backup. Retorna quantos registros foram gravados. */
   importBackup: (backup: Backup, mode: 'merge' | 'replace') => Promise<number>
 }

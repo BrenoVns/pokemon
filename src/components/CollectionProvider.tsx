@@ -261,9 +261,20 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     [commitCards],
   )
 
+  const clearAll = useCallback<CollectionApi['clearAll']>(async () => {
+    const photos = cardsRef.current.map((c) => c.photo_path).filter((p): p is string => Boolean(p))
+    commitCards([])
+    await Promise.all(photos.map((p) => deletePhoto(p)))
+    try {
+      localStorage.removeItem(LIGA_BACKFILL_KEY)
+    } catch {
+      // indisponível
+    }
+  }, [commitCards])
+
   const api = useMemo<CollectionApi>(
-    () => ({ collection, cards, loading, addCard, updateCard, deleteCard, setPhoto, importBackup }),
-    [collection, cards, loading, addCard, updateCard, deleteCard, setPhoto, importBackup],
+    () => ({ collection, cards, loading, addCard, updateCard, deleteCard, setPhoto, importBackup, clearAll }),
+    [collection, cards, loading, addCard, updateCard, deleteCard, setPhoto, importBackup, clearAll],
   )
 
   return <CollectionContext.Provider value={api}>{children}</CollectionContext.Provider>

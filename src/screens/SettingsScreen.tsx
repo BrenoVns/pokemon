@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Download, HardDrive, Upload } from 'lucide-react'
+import { ArrowLeft, Download, HardDrive, Trash2, Upload } from 'lucide-react'
 import { Button, ConfirmDialog, IconButton } from '../components/ui'
 import { useCollection } from '../hooks/useCollection'
 import { goBack } from '../hooks/useRoute'
@@ -13,12 +13,13 @@ function formatBytes(n: number) {
 }
 
 export function SettingsScreen() {
-  const { cards, collection, importBackup } = useCollection()
+  const { cards, collection, importBackup, clearAll } = useCollection()
   const toast = useToast()
   const fileInput = useRef<HTMLInputElement>(null)
   const [pendingImport, setPendingImport] = useState<{ backup: Backup; file: string } | null>(null)
   const [mode, setMode] = useState<'merge' | 'replace'>('merge')
   const [busy, setBusy] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [lastBackup, setLastBackup] = useState(lastBackupAt)
   const [storage, setStorage] = useState<{ usage: number; persisted: boolean } | null>(null)
 
@@ -143,6 +144,28 @@ export function SettingsScreen() {
           </div>
         </section>
       )}
+
+      <section className="mt-8 flex flex-col gap-3" aria-labelledby="reset-title">
+        <h2 id="reset-title" className="text-sm font-bold uppercase tracking-wider text-muted">
+          Recomeçar
+        </h2>
+        <Button variant="danger" onClick={() => setConfirmClear(true)} disabled={cards.length === 0 || busy}>
+          <Trash2 size={18} aria-hidden /> Apagar todas as cartas
+        </Button>
+      </section>
+
+      <ConfirmDialog
+        open={confirmClear}
+        danger
+        title="Apagar todas as cartas?"
+        message={`As ${cards.length} cartas e as suas fotos serão apagadas deste aparelho. Se quiser guardar, exporte um backup antes. Não dá para desfazer.`}
+        confirmLabel="Apagar tudo"
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false)
+          void clearAll().then(() => toast.show('Coleção apagada. Pode começar de novo!', 'success'))
+        }}
+      />
 
       <p className="mt-10 text-center text-xs leading-relaxed text-muted">
         Artes e dados das cartas: TCGdex. Preços: LigaPokemon (abre no site deles).
