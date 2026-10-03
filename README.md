@@ -52,9 +52,9 @@ Se ele não aparecer, crie manualmente: **New bucket** → nome `card-photos` �
 
 Em **Authentication → URL Configuration**:
 
-- **Site URL:** `https://<seu-usuario>.github.io/pokemon/`
+- **Site URL:** `https://brenovns.github.io/pokemon/`
 - **Redirect URLs** (adicione as duas):
-  - `https://<seu-usuario>.github.io/pokemon/**`
+  - `https://brenovns.github.io/pokemon/**`
   - `http://localhost:5173/**`
 
 Em **Authentication → Sign In / Providers**, confirme que **Email** está ativo.
@@ -145,4 +145,4 @@ Notas técnicas:
 
 Depois do deploy, o app fica em:
 
-**https://&lt;seu-usuario&gt;.github.io/pokemon/**
+**https://brenovns.github.io/pokemon/**
