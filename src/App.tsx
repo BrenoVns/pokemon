@@ -4,7 +4,9 @@ import { ToastProvider } from './components/ToastProvider'
 import { BottomNav } from './components/BottomNav'
 import { AddCardSheet } from './components/AddCardSheet'
 import { AddSheetContext, type AddSheetOptions } from './hooks/useAddSheet'
-import { useRoute } from './hooks/useRoute'
+import { navigate, useRoute } from './hooks/useRoute'
+import { useCollection } from './hooks/useCollection'
+import { useToast } from './hooks/useToast'
 import { CollectionScreen } from './screens/CollectionScreen'
 import { SetsScreen } from './screens/SetsScreen'
 import { SetDetailScreen } from './screens/SetDetailScreen'
@@ -24,7 +26,19 @@ export function App() {
 function Shell() {
   const route = useRoute()
   const [addOpts, setAddOpts] = useState<AddSheetOptions | null>(null)
-  const openAdd = useCallback((opts?: AddSheetOptions) => setAddOpts(opts ?? {}), [])
+  const { collection, loading } = useCollection()
+  const toast = useToast()
+  const openAdd = useCallback(
+    (opts?: AddSheetOptions) => {
+      if (!loading && !collection) {
+        toast.show('Crie uma coleção antes de adicionar cartas', 'info')
+        navigate({ name: 'collection' }, true)
+        return
+      }
+      setAddOpts(opts ?? {})
+    },
+    [collection, loading, toast],
+  )
   const closeAdd = useCallback(() => setAddOpts(null), [])
 
   return (

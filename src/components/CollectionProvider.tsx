@@ -34,9 +34,10 @@ function readActiveId(): string | null {
   }
 }
 
-function writeActiveId(id: string) {
+function writeActiveId(id: string | null) {
   try {
-    localStorage.setItem(ACTIVE_KEY, id)
+    if (id) localStorage.setItem(ACTIVE_KEY, id)
+    else localStorage.removeItem(ACTIVE_KEY)
   } catch {
     // indisponível: volta para a primeira coleção na próxima abertura
   }
@@ -72,7 +73,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     [toast],
   )
 
-  const activate = useCallback((id: string) => {
+  const activate = useCallback((id: string | null) => {
     activeIdRef.current = id
     setActiveId(id)
     writeActiveId(id)
@@ -90,8 +91,9 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
         idbGet<Collection>(LEGACY_COLLECTION_KEY),
       ])
       if (!active) return
+      // Lista vazia é válida (a pessoa excluiu todas); só cria a primeira quando nunca houve lista.
       let list = savedList ?? []
-      if (list.length === 0) {
+      if (!savedList) {
         // Primeiro uso, ou migração da versão com uma só coleção.
         const first = legacy ?? newCollection(DEFAULT_NAME)
         list = [{ ...first, name: first.name === 'Coleção principal' ? DEFAULT_NAME : first.name }]
@@ -100,9 +102,9 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       collectionsRef.current = list
       setCollections(list)
       const saved = readActiveId()
-      const activeCol = list.find((c) => c.id === saved) ?? list[0]
-      activeIdRef.current = activeCol.id
-      setActiveId(activeCol.id)
+      const activeCol = list.find((c) => c.id === saved) ?? list[0] ?? null
+      activeIdRef.current = activeCol?.id ?? null
+      setActiveId(activeCol?.id ?? null)
       cardsRef.current = savedCards ?? []
       setAllCards(cardsRef.current)
       setLoading(false)
@@ -157,7 +159,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
   const addCard = useCallback<CollectionApi['addCard']>(
     async (input, photo) => {
       const colId = activeIdRef.current
-      if (!colId) throw new Error('A coleção ainda está carregando. Tente de novo.')
+      if (!colId) throw new Error('Crie uma coleção antes de adicionar cartas.')
       const now = new Date().toISOString()
       const candidate: Card = {
         ...input,
@@ -227,12 +229,15 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
 
   const importBackup = useCallback<CollectionApi['importBackup']>(
     async (backup, mode) => {
-      const colId = activeIdRef.current
-      if (!colId) throw new Error('A coleção ainda está carregando. Tente de novo.')
-
       // Coleções: backups novos trazem a lista; os antigos vão para a coleção ativa.
       const hasCollections = backup.collections.length > 0
       let nextCollections = collectionsRef.current
+      if (!hasCollections && nextCollections.length === 0) {
+        // Backup antigo e nenhuma coleção aqui: cria uma para receber as cartas.
+        const col = newCollection(DEFAULT_NAME)
+        nextCollections = [col]
+        activeIdRef.current = col.id
+      }
       // Coleção do backup com o mesmo nome de uma daqui: junta as duas (id daqui).
       const remap = new Map<string, string>()
       if (hasCollections) {
@@ -251,6 +256,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
         }
       }
       const validIds = new Set(nextCollections.map((c) => c.id))
+      const colId =
+        activeIdRef.current && validIds.has(activeIdRef.current) ? activeIdRef.current : nextCollections[0].id
       const targetOf = (raw: Card) => {
         const id = remap.get(raw.collection_id) ?? raw.collection_id
         return hasCollections && validIds.has(id) ? id : colId
@@ -305,11 +312,11 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
         if (c.photo_path) await savePhoto(c.photo_path, await dataUrlToBlob(backup.photos[c.photo_path]))
       }
       if (nextCollections !== collectionsRef.current) commitCollections(nextCollections)
-      if (!validIds.has(colId)) activate(nextCollections[0].id)
+      if (activeIdRef.current !== colId || activeId !== colId) activate(colId)
       commitCards(result.sort(byNewest))
       return written.length
     },
-    [activate, commitCards, commitCollections],
+    [activate, activeId, commitCards, commitCollections],
   )
 
   /** Apaga as cartas da coleção ativa. */
@@ -328,6 +335,28 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       return col
     },
     [activate, commitCollections],
+  )
+
+  const renameCollection = useCallback<CollectionApi['renameCollection']>(
+    (id, name) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      commitCollections(collectionsRef.current.map((c) => (c.id === id ? { ...c, name: trimmed } : c)))
+    },
+    [commitCollections],
+  )
+
+  /** Exclui a coleção e as cartas dela. */
+  const deleteCollection = useCallback<CollectionApi['deleteCollection']>(
+    (id) => {
+      const removed = cardsRef.current.filter((c) => c.collection_id === id)
+      commitCards(cardsRef.current.filter((c) => c.collection_id !== id))
+      for (const c of removed) if (c.photo_path) void deletePhoto(c.photo_path)
+      const rest = collectionsRef.current.filter((c) => c.id !== id)
+      commitCollections(rest)
+      if (activeIdRef.current === id) activate(rest[0]?.id ?? null)
+    },
+    [activate, commitCards, commitCollections],
   )
 
   const selectCollection = useCallback<CollectionApi['selectCollection']>(
@@ -353,6 +382,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       importBackup,
       clearAll,
       createCollection,
+      renameCollection,
+      deleteCollection,
       selectCollection,
     }),
     [
@@ -367,6 +398,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       importBackup,
       clearAll,
       createCollection,
+      renameCollection,
+      deleteCollection,
       selectCollection,
     ],
   )

@@ -71,14 +71,16 @@ export function CollectionScreen() {
             className="-ml-1 flex max-w-full items-center gap-1.5 rounded-xl px-1 text-left"
           >
             <h1 className="screen-title truncate whitespace-nowrap text-[clamp(28px,8.4vw,36px)]">
-              {collection?.name ?? 'Minha Coleção'}
+              {collection?.name ?? (loading ? '' : 'Coleções')}
             </h1>
             <ChevronDown size={24} strokeWidth={2.4} className="mt-1 shrink-0 text-muted" aria-hidden />
           </button>
-          <p className="mt-1.5 text-[15px] font-medium text-muted">
-            {plural(stats.total, 'carta', 'cartas')} · {plural(stats.unique, 'única', 'únicas')} ·{' '}
-            {plural(stats.sets, 'edição', 'edições')}
-          </p>
+          {collection && (
+            <p className="mt-1.5 text-[15px] font-medium text-muted">
+              {plural(stats.total, 'carta', 'cartas')} · {plural(stats.unique, 'única', 'únicas')} ·{' '}
+              {plural(stats.sets, 'edição', 'edições')}
+            </p>
+          )}
         </div>
         <IconButton
           label={searchOpen ? 'Fechar busca' : 'Buscar na coleção'}
@@ -179,6 +181,13 @@ export function CollectionScreen() {
       <div className="mt-5">
         {loading && cards.length === 0 ? (
           <GridSkeleton />
+        ) : !collection ? (
+          <EmptyState icon={<LibraryBig size={24} aria-hidden />} title="Nenhuma coleção">
+            <p>Crie uma coleção (um fichário) para começar a guardar suas cartas.</p>
+            <Button className="mt-5" onClick={() => setCollectionsOpen(true)}>
+              Criar coleção
+            </Button>
+          </EmptyState>
         ) : cards.length === 0 ? (
           <EmptyState icon={<LibraryBig size={24} aria-hidden />} title="Seu fichário está vazio">
             <p>Adicione a primeira carta para começar a coleção.</p>

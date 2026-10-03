@@ -46,6 +46,9 @@ export interface CollectionApi {
   clearAll: () => Promise<void>
   /** Cria uma coleção e já passa a usá-la. */
   createCollection: (name: string) => Collection
+  renameCollection: (id: string, name: string) => void
+  /** Exclui a coleção e as cartas dela. */
+  deleteCollection: (id: string) => void
   selectCollection: (id: string) => void
   /** Importa um backup. Retorna quantos registros foram gravados. */
   importBackup: (backup: Backup, mode: 'merge' | 'replace') => Promise<number>
