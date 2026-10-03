@@ -13,7 +13,7 @@ function formatBytes(n: number) {
 }
 
 export function SettingsScreen() {
-  const { cards, collection, importBackup, clearAll } = useCollection()
+  const { cards, allCards, collection, collections, importBackup, clearAll } = useCollection()
   const toast = useToast()
   const fileInput = useRef<HTMLInputElement>(null)
   const [pendingImport, setPendingImport] = useState<{ backup: Backup; file: string } | null>(null)
@@ -38,7 +38,7 @@ export function SettingsScreen() {
   async function exportBackup() {
     setBusy(true)
     try {
-      await saveBackupFile(await makeBackup(collection, cards))
+      await saveBackupFile(await makeBackup(collections, allCards))
       setLastBackup(lastBackupAt())
       toast.show('Backup exportado', 'success')
     } catch (e) {
@@ -101,12 +101,12 @@ export function SettingsScreen() {
         </h2>
         <div className="rounded-2xl border border-line bg-surface p-4">
           <p className="text-sm leading-relaxed text-muted">
-            Sua coleção fica guardada só neste aparelho. Exporte um backup de vez em quando e guarde o arquivo (Drive,
-            iCloud, e-mail). Ele inclui as fotos e serve também para levar a coleção para outro aparelho.
+            Suas coleções ficam guardadas só neste aparelho. Exporte um backup de vez em quando e guarde o arquivo
+            (Drive, iCloud, e-mail). Ele leva todas as coleções e serve também para passar tudo para outro aparelho.
           </p>
           <p className="mt-3 text-sm font-semibold">Último backup: {lastLabel}</p>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Button className="flex-1" onClick={() => void exportBackup()} disabled={cards.length === 0 || busy}>
+            <Button className="flex-1" onClick={() => void exportBackup()} disabled={allCards.length === 0 || busy}>
               <Download size={18} aria-hidden /> Exportar backup
             </Button>
             <Button variant="surface" className="flex-1" onClick={() => fileInput.current?.click()} disabled={busy}>
@@ -150,20 +150,20 @@ export function SettingsScreen() {
           Recomeçar
         </h2>
         <Button variant="danger" onClick={() => setConfirmClear(true)} disabled={cards.length === 0 || busy}>
-          <Trash2 size={18} aria-hidden /> Apagar todas as cartas
+          <Trash2 size={18} aria-hidden /> Apagar as cartas desta coleção
         </Button>
       </section>
 
       <ConfirmDialog
         open={confirmClear}
         danger
-        title="Apagar todas as cartas?"
-        message={`As ${cards.length} cartas e as suas fotos serão apagadas deste aparelho. Se quiser guardar, exporte um backup antes. Não dá para desfazer.`}
+        title={`Apagar as cartas de "${collection?.name ?? ''}"?`}
+        message={`As ${cards.length} cartas desta coleção serão apagadas deste aparelho. As outras coleções continuam como estão. Se quiser guardar, exporte um backup antes. Não dá para desfazer.`}
         confirmLabel="Apagar tudo"
         onCancel={() => setConfirmClear(false)}
         onConfirm={() => {
           setConfirmClear(false)
-          void clearAll().then(() => toast.show('Coleção apagada. Pode começar de novo!', 'success'))
+          void clearAll().then(() => toast.show('Cartas apagadas. Pode começar de novo!', 'success'))
         }}
       />
 

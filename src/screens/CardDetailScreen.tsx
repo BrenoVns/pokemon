@@ -11,8 +11,8 @@ import { ligaName, ligaSearchUrl, ligaUrlFor } from '../lib/liga'
 import { CONDITION_LABELS, CONDITIONS, LANGUAGES, VARIANTS, type Card } from '../lib/types'
 
 export function CardDetailScreen({ id }: { id: string }) {
-  const { cards, loading } = useCollection()
-  const card = cards.find((c) => c.id === id)
+  const { allCards, loading } = useCollection()
+  const card = allCards.find((c) => c.id === id)
 
   return (
     <main className="px-4 pb-16 pt-[max(16px,env(safe-area-inset-top))] md:px-8">

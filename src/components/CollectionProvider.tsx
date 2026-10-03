@@ -7,9 +7,13 @@ import { deletePhoto, newPhotoPath, savePhoto } from '../lib/photos'
 import { findLigaCard, loadCatalog } from '../lib/ligaCatalog'
 import { comboKey, type Card, type Collection } from '../lib/types'
 
-// Tudo fica no próprio aparelho (IndexedDB). O formato já prevê várias coleções.
+// Tudo fica no próprio aparelho (IndexedDB). Cada carta aponta para uma coleção (collection_id).
 const CARDS_KEY = 'cards'
-const COLLECTION_KEY = 'collection'
+const COLLECTIONS_KEY = 'collections'
+/** Formato antigo, de quando só havia uma coleção */
+const LEGACY_COLLECTION_KEY = 'collection'
+const ACTIVE_KEY = 'fichario:colecaoAtiva'
+const DEFAULT_NAME = 'Minha Coleção'
 const LIGA_BACKFILL_KEY = 'fichario:ligaBackfill'
 // Aumente quando a regra de associação com a Liga mudar, para reprocessar as cartas salvas.
 const LIGA_BACKFILL_VERSION = 2
@@ -18,23 +22,61 @@ function byNewest(a: Card, b: Card) {
   return b.created_at.localeCompare(a.created_at)
 }
 
+function newCollection(name: string): Collection {
+  return { id: crypto.randomUUID(), name, created_at: new Date().toISOString() }
+}
+
+function readActiveId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeActiveId(id: string) {
+  try {
+    localStorage.setItem(ACTIVE_KEY, id)
+  } catch {
+    // indisponível: volta para a primeira coleção na próxima abertura
+  }
+}
+
 export function CollectionProvider({ children }: { children: ReactNode }) {
   const toast = useToast()
-  const [collection, setCollection] = useState<Collection | null>(null)
-  const [cards, setCards] = useState<Card[]>([])
+  const [collections, setCollections] = useState<Collection[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [allCards, setAllCards] = useState<Card[]>([])
   const [loading, setLoading] = useState(true)
 
+  /** Todas as cartas, de todas as coleções */
   const cardsRef = useRef<Card[]>([])
-  const collectionRef = useRef<Collection | null>(null)
+  const collectionsRef = useRef<Collection[]>([])
+  const activeIdRef = useRef<string | null>(null)
 
   const commitCards = useCallback(
     (next: Card[]) => {
       cardsRef.current = next
-      setCards(next)
+      setAllCards(next)
       idbSet(CARDS_KEY, next).catch(() => toast.show('Não foi possível salvar no aparelho', 'error'))
     },
     [toast],
   )
+
+  const commitCollections = useCallback(
+    (next: Collection[]) => {
+      collectionsRef.current = next
+      setCollections(next)
+      idbSet(COLLECTIONS_KEY, next).catch(() => toast.show('Não foi possível salvar no aparelho', 'error'))
+    },
+    [toast],
+  )
+
+  const activate = useCallback((id: string) => {
+    activeIdRef.current = id
+    setActiveId(id)
+    writeActiveId(id)
+  }, [])
 
   // Carga inicial; cria a "Minha Coleção" no primeiro uso.
   useEffect(() => {
@@ -42,17 +84,27 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     ;(async () => {
       // Pede ao navegador para não apagar os dados quando faltar espaço.
       void navigator.storage?.persist?.()
-      const [savedCards, savedCol] = await Promise.all([idbGet<Card[]>(CARDS_KEY), idbGet<Collection>(COLLECTION_KEY)])
+      const [savedCards, savedList, legacy] = await Promise.all([
+        idbGet<Card[]>(CARDS_KEY),
+        idbGet<Collection[]>(COLLECTIONS_KEY),
+        idbGet<Collection>(LEGACY_COLLECTION_KEY),
+      ])
       if (!active) return
-      let col = savedCol
-      if (!col) {
-        col = { id: crypto.randomUUID(), name: 'Minha Coleção', created_at: new Date().toISOString() }
-        await idbSet(COLLECTION_KEY, col)
+      let list = savedList ?? []
+      if (list.length === 0) {
+        // Primeiro uso, ou migração da versão com uma só coleção.
+        const first = legacy ?? newCollection(DEFAULT_NAME)
+        list = [{ ...first, name: first.name === 'Coleção principal' ? DEFAULT_NAME : first.name }]
+        await idbSet(COLLECTIONS_KEY, list)
       }
-      collectionRef.current = col
-      setCollection(col)
+      collectionsRef.current = list
+      setCollections(list)
+      const saved = readActiveId()
+      const activeCol = list.find((c) => c.id === saved) ?? list[0]
+      activeIdRef.current = activeCol.id
+      setActiveId(activeCol.id)
       cardsRef.current = savedCards ?? []
-      setCards(cardsRef.current)
+      setAllCards(cardsRef.current)
       setLoading(false)
     })()
     return () => {
@@ -104,13 +156,13 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
 
   const addCard = useCallback<CollectionApi['addCard']>(
     async (input, photo) => {
-      const col = collectionRef.current
-      if (!col) throw new Error('A coleção ainda está carregando. Tente de novo.')
+      const colId = activeIdRef.current
+      if (!colId) throw new Error('A coleção ainda está carregando. Tente de novo.')
       const now = new Date().toISOString()
       const candidate: Card = {
         ...input,
         id: crypto.randomUUID(),
-        collection_id: col.id,
+        collection_id: colId,
         photo_path: null,
         created_at: now,
         updated_at: now,
@@ -175,15 +227,41 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
 
   const importBackup = useCallback<CollectionApi['importBackup']>(
     async (backup, mode) => {
-      const col = collectionRef.current
-      if (!col) throw new Error('A coleção ainda está carregando. Tente de novo.')
+      const colId = activeIdRef.current
+      if (!colId) throw new Error('A coleção ainda está carregando. Tente de novo.')
 
-      // Normaliza para a coleção atual e junta combinações repetidas do próprio arquivo.
+      // Coleções: backups novos trazem a lista; os antigos vão para a coleção ativa.
+      const hasCollections = backup.collections.length > 0
+      let nextCollections = collectionsRef.current
+      // Coleção do backup com o mesmo nome de uma daqui: junta as duas (id daqui).
+      const remap = new Map<string, string>()
+      if (hasCollections) {
+        if (mode === 'replace') nextCollections = backup.collections
+        else {
+          const byId = new Set(nextCollections.map((c) => c.id))
+          const byName = new Map(nextCollections.map((c) => [c.name.trim().toLowerCase(), c.id]))
+          const added: Collection[] = []
+          for (const c of backup.collections) {
+            if (byId.has(c.id)) continue
+            const same = byName.get(c.name.trim().toLowerCase())
+            if (same) remap.set(c.id, same)
+            else added.push(c)
+          }
+          nextCollections = [...nextCollections, ...added]
+        }
+      }
+      const validIds = new Set(nextCollections.map((c) => c.id))
+      const targetOf = (raw: Card) => {
+        const id = remap.get(raw.collection_id) ?? raw.collection_id
+        return hasCollections && validIds.has(id) ? id : colId
+      }
+
+      // Junta combinações repetidas do próprio arquivo.
       const incoming = new Map<string, Card>()
       for (const raw of backup.cards) {
         const card: Card = {
           ...raw,
-          collection_id: col.id,
+          collection_id: targetOf(raw),
           photo_path: raw.photo_path && backup.photos[raw.photo_path] ? raw.photo_path : null,
         }
         const k = comboKey(card)
@@ -195,9 +273,11 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       let written: Card[]
       if (mode === 'replace') {
         written = [...incoming.values()]
-        const keep = new Set(written.map((c) => c.photo_path))
+        // Com lista de coleções, substitui tudo; backup antigo substitui só a coleção ativa.
+        const kept = hasCollections ? [] : cardsRef.current.filter((c) => c.collection_id !== colId)
+        const keep = new Set([...written, ...kept].map((c) => c.photo_path))
         for (const c of cardsRef.current) if (c.photo_path && !keep.has(c.photo_path)) void deletePhoto(c.photo_path)
-        result = written
+        result = [...kept, ...written]
       } else {
         const byId = new Map(cardsRef.current.map((c) => [c.id, c]))
         const byCombo = new Map(cardsRef.current.map((c) => [comboKey(c), c]))
@@ -224,26 +304,71 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       for (const c of written) {
         if (c.photo_path) await savePhoto(c.photo_path, await dataUrlToBlob(backup.photos[c.photo_path]))
       }
+      if (nextCollections !== collectionsRef.current) commitCollections(nextCollections)
+      if (!validIds.has(colId)) activate(nextCollections[0].id)
       commitCards(result.sort(byNewest))
       return written.length
     },
-    [commitCards],
+    [activate, commitCards, commitCollections],
   )
 
+  /** Apaga as cartas da coleção ativa. */
   const clearAll = useCallback<CollectionApi['clearAll']>(async () => {
-    const photos = cardsRef.current.map((c) => c.photo_path).filter((p): p is string => Boolean(p))
-    commitCards([])
-    await Promise.all(photos.map((p) => deletePhoto(p)))
-    try {
-      localStorage.removeItem(LIGA_BACKFILL_KEY)
-    } catch {
-      // indisponível
-    }
+    const colId = activeIdRef.current
+    const removed = cardsRef.current.filter((c) => c.collection_id === colId)
+    commitCards(cardsRef.current.filter((c) => c.collection_id !== colId))
+    await Promise.all(removed.map((c) => c.photo_path && deletePhoto(c.photo_path)))
   }, [commitCards])
 
+  const createCollection = useCallback<CollectionApi['createCollection']>(
+    (name) => {
+      const col = newCollection(name.trim() || 'Nova coleção')
+      commitCollections([...collectionsRef.current, col])
+      activate(col.id)
+      return col
+    },
+    [activate, commitCollections],
+  )
+
+  const selectCollection = useCallback<CollectionApi['selectCollection']>(
+    (id) => {
+      if (collectionsRef.current.some((c) => c.id === id)) activate(id)
+    },
+    [activate],
+  )
+
+  const collection = useMemo(() => collections.find((c) => c.id === activeId) ?? null, [collections, activeId])
+  const cards = useMemo(() => allCards.filter((c) => c.collection_id === activeId), [allCards, activeId])
+
   const api = useMemo<CollectionApi>(
-    () => ({ collection, cards, loading, addCard, updateCard, deleteCard, importBackup, clearAll }),
-    [collection, cards, loading, addCard, updateCard, deleteCard, importBackup, clearAll],
+    () => ({
+      collection,
+      collections,
+      cards,
+      allCards,
+      loading,
+      addCard,
+      updateCard,
+      deleteCard,
+      importBackup,
+      clearAll,
+      createCollection,
+      selectCollection,
+    }),
+    [
+      collection,
+      collections,
+      cards,
+      allCards,
+      loading,
+      addCard,
+      updateCard,
+      deleteCard,
+      importBackup,
+      clearAll,
+      createCollection,
+      selectCollection,
+    ],
   )
 
   return <CollectionContext.Provider value={api}>{children}</CollectionContext.Provider>

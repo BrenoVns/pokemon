@@ -28,8 +28,13 @@ export type CardPatch = Partial<
 >
 
 export interface CollectionApi {
+  /** Coleção ativa (a que está sendo vista e recebe as cartas novas) */
   collection: Collection | null
+  collections: Collection[]
+  /** Cartas da coleção ativa */
   cards: Card[]
+  /** Cartas de todas as coleções (backup, detalhe por link) */
+  allCards: Card[]
   /** true até ler os dados salvos no aparelho */
   loading: boolean
   /** Soma à quantidade se a combinação já existir. Retorna o id do registro final. */
@@ -37,8 +42,11 @@ export interface CollectionApi {
   /** Pode fundir com outro registro se a combinação passar a coincidir. Retorna o id final. */
   updateCard: (id: string, patch: CardPatch) => string
   deleteCard: (id: string) => void
-  /** Apaga todas as cartas e fotos deste aparelho. */
+  /** Apaga as cartas da coleção ativa. */
   clearAll: () => Promise<void>
+  /** Cria uma coleção e já passa a usá-la. */
+  createCollection: (name: string) => Collection
+  selectCollection: (id: string) => void
   /** Importa um backup. Retorna quantos registros foram gravados. */
   importBackup: (backup: Backup, mode: 'merge' | 'replace') => Promise<number>
 }

@@ -3,9 +3,10 @@ import { CONDITIONS, LANGUAGES, VARIANTS, type Card, type Collection } from './t
 
 export interface Backup {
   app: 'fichario-pokemon'
-  version: 2
+  version: 3
   exported_at: string
-  collection: Collection | null
+  /** Todas as coleções (backups antigos não têm: as cartas vão para a coleção ativa) */
+  collections: Collection[]
   cards: Card[]
   /** Fotos próprias em data URL, indexadas pelo photo_path da carta */
   photos: Record<string, string>
@@ -34,14 +35,14 @@ export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return (await fetch(dataUrl)).blob()
 }
 
-export async function makeBackup(collection: Collection | null, cards: Card[]): Promise<Backup> {
+export async function makeBackup(collections: Collection[], cards: Card[]): Promise<Backup> {
   const photos: Record<string, string> = {}
   for (const c of cards) {
     if (!c.photo_path) continue
     const blob = await getPhotoBlob(c.photo_path)
     if (blob) photos[c.photo_path] = await blobToDataUrl(blob)
   }
-  return { app: 'fichario-pokemon', version: 2, exported_at: new Date().toISOString(), collection, cards, photos }
+  return { app: 'fichario-pokemon', version: 3, exported_at: new Date().toISOString(), collections, cards, photos }
 }
 
 /** Salva o arquivo: no celular usa o compartilhamento (Salvar em Arquivos, Drive…), senão baixa. */
@@ -86,7 +87,11 @@ function pick<T extends string>(v: unknown, allowed: readonly T[], fallback: T):
 /** Lê e valida um backup (aceita também versões antigas e uma lista de cartas pura). */
 export function parseBackup(text: string): Backup {
   const data = JSON.parse(text) as unknown
-  const obj = (Array.isArray(data) ? { cards: data } : data) as { cards?: unknown; photos?: unknown }
+  const obj = (Array.isArray(data) ? { cards: data } : data) as {
+    cards?: unknown
+    photos?: unknown
+    collections?: unknown
+  }
   if (!Array.isArray(obj?.cards)) throw new Error('Arquivo sem a lista de cartas')
   const now = new Date().toISOString()
   const cards: Card[] = obj.cards
@@ -122,5 +127,11 @@ export function parseBackup(text: string): Backup {
       if (typeof v === 'string' && v.startsWith('data:image/')) photos[k] = v
     }
   }
-  return { app: 'fichario-pokemon', version: 2, exported_at: now, collection: null, cards, photos }
+  const collections: Collection[] = Array.isArray(obj.collections)
+    ? obj.collections
+        .filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null)
+        .filter((c) => UUID.test(str(c.id) ?? '') && str(c.name))
+        .map((c) => ({ id: str(c.id)!, name: str(c.name)!, created_at: str(c.created_at) ?? now }))
+    : []
+  return { app: 'fichario-pokemon', version: 3, exported_at: now, collections, cards, photos }
 }

@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
-import { ArrowDownUp, LayoutGrid, LibraryBig, List, Search, Settings, SquareStack, X } from 'lucide-react'
+import { ArrowDownUp, ChevronDown, LayoutGrid, LibraryBig, List, Search, Settings, SquareStack, X } from 'lucide-react'
 import { GalleryGrid, GridSkeleton, GroupedList, ShowcaseGrid } from '../components/CardViews'
+import { CollectionsSheet } from '../components/CollectionsSheet'
 import { Button, EmptyState, IconButton, Pill, inputClass } from '../components/ui'
 import { useAddSheet } from '../hooks/useAddSheet'
 import { useCollection } from '../hooks/useCollection'
@@ -20,7 +21,8 @@ function plural(n: number, one: string, many: string) {
 }
 
 export function CollectionScreen() {
-  const { cards, loading } = useCollection()
+  const { cards, collection, loading } = useCollection()
+  const [collectionsOpen, setCollectionsOpen] = useState(false)
   const openAdd = useAddSheet()
   const [view, setView] = useLocalStorage<View>('fichario:view', 'vitrine', VIEWS)
   const [sort, setSort] = useLocalStorage<SortMode>('fichario:sort', 'recent', SORTS)
@@ -61,7 +63,18 @@ export function CollectionScreen() {
     <main className="pb-nav px-4 pt-[max(20px,env(safe-area-inset-top))] md:px-8">
       <header className="flex items-start gap-3 pt-2">
         <div className="min-w-0 flex-1">
-          <h1 className="screen-title whitespace-nowrap text-[clamp(28px,8.4vw,36px)]">Minha Coleção</h1>
+          <button
+            type="button"
+            onClick={() => setCollectionsOpen(true)}
+            aria-haspopup="dialog"
+            aria-label={`Coleção: ${collection?.name ?? ''}. Trocar ou criar coleção`}
+            className="-ml-1 flex max-w-full items-center gap-1.5 rounded-xl px-1 text-left"
+          >
+            <h1 className="screen-title truncate whitespace-nowrap text-[clamp(28px,8.4vw,36px)]">
+              {collection?.name ?? 'Minha Coleção'}
+            </h1>
+            <ChevronDown size={24} strokeWidth={2.4} className="mt-1 shrink-0 text-muted" aria-hidden />
+          </button>
           <p className="mt-1.5 text-[15px] font-medium text-muted">
             {plural(stats.total, 'carta', 'cartas')} · {plural(stats.unique, 'única', 'únicas')} ·{' '}
             {plural(stats.sets, 'edição', 'edições')}
@@ -185,6 +198,7 @@ export function CollectionScreen() {
           <GroupedList cards={visible} sets={sets} />
         )}
       </div>
+      {collectionsOpen && <CollectionsSheet onClose={() => setCollectionsOpen(false)} />}
     </main>
   )
 }
