@@ -20,9 +20,9 @@ export function SetsScreen() {
   return (
     <main className="pb-nav px-4 pt-[max(20px,env(safe-area-inset-top))] md:px-8">
       <header className="pt-2">
-        <h1 className="screen-title">Sets</h1>
+        <h1 className="screen-title">Edições</h1>
         <p className="mt-1.5 text-[15px] font-medium text-muted">
-          {sets.length === 1 ? '1 set na coleção' : `${sets.length} sets na coleção`}
+          {sets.length === 1 ? '1 edição na coleção' : `${sets.length} edições na coleção`}
         </p>
       </header>
 
@@ -33,8 +33,8 @@ export function SetsScreen() {
           ))}
         </div>
       ) : sets.length === 0 ? (
-        <EmptyState icon={<Layers size={24} aria-hidden />} title="Nenhum set ainda">
-          Os sets aparecem aqui conforme você adiciona cartas.
+        <EmptyState icon={<Layers size={24} aria-hidden />} title="Nenhuma edição ainda">
+          As edições aparecem aqui conforme você adiciona cartas.
         </EmptyState>
       ) : (
         <ul className="mt-6 grid gap-3 md:grid-cols-2">

@@ -61,10 +61,10 @@ export function CollectionScreen() {
     <main className="pb-nav px-4 pt-[max(20px,env(safe-area-inset-top))] md:px-8">
       <header className="flex items-start gap-3 pt-2">
         <div className="min-w-0 flex-1">
-          <h1 className="screen-title">Coleção</h1>
+          <h1 className="screen-title whitespace-nowrap text-[clamp(28px,8.4vw,36px)]">Minha Coleção</h1>
           <p className="mt-1.5 text-[15px] font-medium text-muted">
             {plural(stats.total, 'carta', 'cartas')} · {plural(stats.unique, 'única', 'únicas')} ·{' '}
-            {plural(stats.sets, 'set', 'sets')}
+            {plural(stats.sets, 'edição', 'edições')}
           </p>
         </div>
         <IconButton
@@ -91,7 +91,7 @@ export function CollectionScreen() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por nome, set ou número"
+            placeholder="Buscar por nome, edição ou número"
             aria-label="Buscar na coleção"
             className={cx(inputClass, 'pl-11')}
           />
@@ -102,7 +102,7 @@ export function CollectionScreen() {
         <div
           className="no-scrollbar -mx-4 mt-5 flex gap-2 overflow-x-auto px-4 md:-mx-8 md:px-8"
           role="toolbar"
-          aria-label="Filtrar por set"
+          aria-label="Filtrar por edição"
         >
           <Pill active={!activeSet} onClick={() => setSetFilter(null)}>
             Tudo

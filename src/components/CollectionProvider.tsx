@@ -35,7 +35,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     [toast],
   )
 
-  // Carga inicial; cria a "Coleção principal" no primeiro uso.
+  // Carga inicial; cria a "Minha Coleção" no primeiro uso.
   useEffect(() => {
     let active = true
     ;(async () => {
@@ -45,7 +45,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       if (!active) return
       let col = savedCol
       if (!col) {
-        col = { id: crypto.randomUUID(), name: 'Coleção principal', created_at: new Date().toISOString() }
+        col = { id: crypto.randomUUID(), name: 'Minha Coleção', created_at: new Date().toISOString() }
         await idbSet(COLLECTION_KEY, col)
       }
       collectionRef.current = col
@@ -187,23 +187,6 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     [commitCards],
   )
 
-  const setPhoto = useCallback<CollectionApi['setPhoto']>(
-    async (id, photo) => {
-      const card = cardsRef.current.find((c) => c.id === id)
-      if (!card) return
-      let updated: Card
-      if (photo) {
-        updated = await attachPhoto(card, photo)
-      } else {
-        if (card.photo_path) void deletePhoto(card.photo_path)
-        updated = { ...card, photo_path: null }
-      }
-      updated.updated_at = new Date().toISOString()
-      commitCards(cardsRef.current.map((c) => (c.id === id ? updated : c)))
-    },
-    [attachPhoto, commitCards],
-  )
-
   const importBackup = useCallback<CollectionApi['importBackup']>(
     async (backup, mode) => {
       const col = collectionRef.current
@@ -273,8 +256,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
   }, [commitCards])
 
   const api = useMemo<CollectionApi>(
-    () => ({ collection, cards, loading, addCard, updateCard, deleteCard, setPhoto, importBackup, clearAll }),
-    [collection, cards, loading, addCard, updateCard, deleteCard, setPhoto, importBackup, clearAll],
+    () => ({ collection, cards, loading, addCard, updateCard, deleteCard, importBackup, clearAll }),
+    [collection, cards, loading, addCard, updateCard, deleteCard, importBackup, clearAll],
   )
 
   return <CollectionContext.Provider value={api}>{children}</CollectionContext.Provider>

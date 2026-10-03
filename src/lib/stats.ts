@@ -29,7 +29,7 @@ export function summarizeSets(cards: Card[]): SetSummary[] {
       s = {
         key,
         setId: c.set_id,
-        name: c.set_name || 'Sem set',
+        name: c.set_name || 'Sem edição',
         total: null,
         owned: 0,
         quantity: 0,

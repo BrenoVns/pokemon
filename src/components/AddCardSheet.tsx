@@ -4,7 +4,6 @@ import { useCollection } from '../hooks/useCollection'
 import { useToast } from '../hooks/useToast'
 import type { AddSheetOptions } from '../hooks/useAddSheet'
 import { cx } from '../lib/cx'
-import { isValidUrl } from '../lib/liga'
 import { findLigaCard, loadCatalog, plainNumber, searchCatalog, type Catalog, type LigaCard } from '../lib/ligaCatalog'
 import { normalize } from '../lib/stats'
 import {
@@ -28,7 +27,6 @@ import {
   type Variant,
 } from '../lib/types'
 import { CardArt } from './CardArt'
-import { PhotoPicker } from './PhotoPicker'
 import { Button, Field, PillChoice, Segmented, Sheet, Stepper, inputClass } from './ui'
 
 const MAX_RESULTS = 90
@@ -79,8 +77,6 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
   const [language, setLanguage] = useState<Language>(from?.language ?? 'PT')
   const [variant, setVariant] = useState<Variant>(from?.variant ?? 'Normal')
   const [ligaUrl, setLigaUrl] = useState(from?.liga_url ?? options.liga?.url ?? '')
-  const [notes, setNotes] = useState('')
-  const [photo, setPhoto] = useState<Blob | null>(null)
   const [saving, setSaving] = useState(false)
 
   // Cadastro manual
@@ -162,10 +158,8 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
       }
       // Achou a mesma carta no catálogo da Liga: usa a imagem e o link exato de lá.
       const liga = catalog ? findLigaCard(catalog, identity) : null
-      if (liga) {
-        identity.liga_image = liga.image
-        setLigaUrl((v) => v || liga.url)
-      }
+      if (liga) identity.liga_image = liga.image
+      setLigaUrl(liga?.url ?? '')
       setSelected(identity)
     } catch {
       if (!brief.name) {
@@ -200,7 +194,6 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
     setStep('form')
   }
 
-  const ligaInvalid = ligaUrl.trim() !== '' && !isValidUrl(ligaUrl)
   const identity: CardIdentity | null = manual
     ? mName.trim()
       ? {
@@ -215,7 +208,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
         }
       : null
     : selected
-  const canSave = Boolean(identity) && !ligaInvalid && !saving && !selectingId
+  const canSave = Boolean(identity) && !saving && !selectingId
 
   async function save() {
     if (!identity || !canSave) return
@@ -229,9 +222,9 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
           language,
           variant,
           liga_url: ligaUrl.trim() || null,
-          notes: notes.trim() || null,
+          notes: from?.notes ?? null,
         },
-        photo,
+        null,
       )
       toast.show(merged ? 'Já estava na coleção: quantidade somada' : 'Carta salva na coleção', 'success')
       onClose()
@@ -435,7 +428,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
                 />
               </label>
               <label className="col-span-2 flex flex-col gap-2">
-                <span className="text-sm font-semibold text-muted">Set</span>
+                <span className="text-sm font-semibold text-muted">Edição</span>
                 <input
                   className={inputClass}
                   value={mSet}
@@ -453,7 +446,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
                 />
               </label>
               <label className="flex flex-col gap-2">
-                <span className="text-sm font-semibold text-muted">Total do set</span>
+                <span className="text-sm font-semibold text-muted">Total da edição</span>
                 <input
                   className={inputClass}
                   value={mTotal}
@@ -517,38 +510,6 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
           </Field>
           <Field label="Variante">
             <PillChoice label="Variante" options={VARIANTS} value={variant} onChange={setVariant} />
-          </Field>
-          <Field
-            label="Link da LigaPokemon (opcional)"
-            hint={
-              ligaInvalid ? (
-                <span className="text-danger">Cole um link completo, começando com https://</span>
-              ) : (
-                'Sem link, o app monta automaticamente o endereço da carta na Liga pelo nome e número.'
-              )
-            }
-          >
-            <input
-              type="url"
-              inputMode="url"
-              value={ligaUrl}
-              onChange={(e) => setLigaUrl(e.target.value)}
-              placeholder="https://www.ligapokemon.com.br/?view=cards/card&card=…"
-              className={inputClass}
-              aria-invalid={ligaInvalid}
-            />
-          </Field>
-          <Field label="Foto própria (opcional)">
-            <PhotoPicker value={photo} onChange={setPhoto} />
-          </Field>
-          <Field label="Notas">
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              placeholder="Onde comprei, troca, observações…"
-              className={cx(inputClass, 'py-3')}
-            />
           </Field>
         </div>
       )}

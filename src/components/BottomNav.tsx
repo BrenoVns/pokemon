@@ -24,7 +24,7 @@ export function BottomNav({ active, onAdd }: { active: 'collection' | 'sets'; on
       className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md px-[18px] pb-[calc(18px+env(safe-area-inset-bottom))]"
     >
       <div className="flex h-[70px] items-center rounded-[var(--radius-nav)] border border-line bg-nav px-4 shadow-[0_20px_50px_rgba(0,0,0,0.65),0_4px_14px_rgba(0,0,0,0.4)] backdrop-blur-xl">
-        {item('collection', 'Coleção', LibraryBig)}
+        {item('collection', 'Minha Coleção', LibraryBig)}
         <button
           type="button"
           onClick={onAdd}
@@ -33,7 +33,7 @@ export function BottomNav({ active, onAdd }: { active: 'collection' | 'sets'; on
         >
           <Plus size={26} strokeWidth={2.4} aria-hidden />
         </button>
-        {item('sets', 'Sets', Layers)}
+        {item('sets', 'Edições', Layers)}
       </div>
     </nav>
   )

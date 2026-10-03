@@ -1,29 +1,4 @@
-// Utilidades de imagem: redimensionar fotos e extrair a cor dominante da arte.
-
-const MAX_SIDE = 1200
-
-/** Redimensiona para no máximo 1200px no maior lado e devolve JPEG. */
-export async function resizeImage(file: File, maxSide = MAX_SIDE): Promise<Blob> {
-  let source: ImageBitmap | HTMLImageElement
-  try {
-    source = await createImageBitmap(file, { imageOrientation: 'from-image' })
-  } catch {
-    source = await loadImage(URL.createObjectURL(file))
-  }
-  const w = source.width
-  const h = source.height
-  const scale = Math.min(1, maxSide / Math.max(w, h))
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(w * scale)
-  canvas.height = Math.round(h * scale)
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas indisponível')
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
-  if ('close' in source) source.close()
-  return new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Falha ao comprimir a foto'))), 'image/jpeg', 0.85),
-  )
-}
+// Utilidades de imagem: extrair a cor dominante da arte.
 
 function loadImage(src: string, crossOrigin = false): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

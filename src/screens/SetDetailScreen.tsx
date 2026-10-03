@@ -161,7 +161,7 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
       </header>
 
       {!isManual && (
-        <div className="mt-5 flex gap-2" role="toolbar" aria-label="Filtrar cartas do set">
+        <div className="mt-5 flex gap-2" role="toolbar" aria-label="Filtrar cartas da edição">
           <Pill active={filter === 'all'} onClick={() => setFilter('all')}>
             Todas
           </Pill>
@@ -176,7 +176,8 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
 
       {current?.error && (
         <p className="mt-4 flex items-center gap-2 rounded-2xl border border-line bg-surface p-3 text-sm text-muted">
-          <CloudOff size={16} aria-hidden /> Não consegui carregar o set completo: mostrando só as cartas que você tem.
+          <CloudOff size={16} aria-hidden /> Não consegui carregar a edição completa: mostrando só as cartas que você
+          tem.
         </p>
       )}
 

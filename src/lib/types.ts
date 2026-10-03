@@ -66,5 +66,5 @@ export function comboKey(c: Card): string {
 
 /** Agrupamento por set: id do TCGdex ou, no cadastro manual, o nome digitado. */
 export function setKeyOf(c: Pick<Card, 'set_id' | 'set_name'>): string {
-  return c.set_id ? c.set_id : `manual:${c.set_name ?? 'Sem set'}`
+  return c.set_id ? c.set_id : `manual:${c.set_name ?? 'Sem edição'}`
 }

@@ -1,24 +1,13 @@
 import { useState, type ReactNode } from 'react'
 import { ArrowLeft, Copy, ExternalLink, Search, Trash2 } from 'lucide-react'
 import { CardArt } from '../components/CardArt'
-import { PhotoPicker } from '../components/PhotoPicker'
-import {
-  Button,
-  ConfirmDialog,
-  EmptyState,
-  IconButton,
-  PillChoice,
-  Segmented,
-  Stepper,
-  inputClass,
-} from '../components/ui'
+import { Button, ConfirmDialog, EmptyState, IconButton, PillChoice, Segmented, Stepper } from '../components/ui'
 import { useAddSheet } from '../hooks/useAddSheet'
 import { useCollection } from '../hooks/useCollection'
-import { usePhotoUrl } from '../hooks/usePhotoUrl'
 import { goBack, navigate } from '../hooks/useRoute'
 import { useToast } from '../hooks/useToast'
 import { cx } from '../lib/cx'
-import { isValidUrl, ligaCardUrl, ligaName, ligaSearchUrl, ligaUrlFor } from '../lib/liga'
+import { ligaName, ligaSearchUrl, ligaUrlFor } from '../lib/liga'
 import { CONDITION_LABELS, CONDITIONS, LANGUAGES, VARIANTS, type Card } from '../lib/types'
 
 export function CardDetailScreen({ id }: { id: string }) {
@@ -62,39 +51,16 @@ function Row({ label, children, stacked }: { label: string; children: ReactNode;
 }
 
 function Detail({ card }: { card: Card }) {
-  const { updateCard, deleteCard, setPhoto } = useCollection()
+  const { updateCard, deleteCard } = useCollection()
   const openAdd = useAddSheet()
   const toast = useToast()
-  const photo = usePhotoUrl(card.photo_path)
-  const hasOfficial = Boolean(card.liga_image || card.image_url)
-  const [showPhoto, setShowPhoto] = useState(!hasOfficial)
-  const [link, setLink] = useState(card.liga_url ?? '')
-  const [notes, setNotes] = useState(card.notes ?? '')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const liga = ligaUrlFor(card)
-  const showToggle = hasOfficial && Boolean(card.photo_path)
-  const linkInvalid = link.trim() !== '' && !isValidUrl(link)
 
   function update(patch: Parameters<typeof updateCard>[1]) {
     const finalId = updateCard(card.id, patch)
     if (finalId !== card.id) navigate({ name: 'card', id: finalId }, true)
-  }
-
-  function saveLink() {
-    const v = link.trim()
-    if (v === (card.liga_url ?? '')) return
-    if (v && !isValidUrl(v)) {
-      toast.show('Link inválido: use um endereço completo com https://', 'error')
-      return
-    }
-    update({ liga_url: v || null })
-    toast.show(v ? 'Link salvo' : 'Link removido — usando o link automático', 'success')
-  }
-
-  function saveNotes() {
-    const v = notes.trim()
-    if (v !== (card.notes ?? '')) update({ notes: v || null })
   }
 
   function remove() {
@@ -119,24 +85,12 @@ function Detail({ card }: { card: Card }) {
           image={card.image_url}
           ligaImage={card.liga_image}
           photoPath={card.photo_path}
-          prefer={showPhoto ? 'photo' : 'official'}
           quality="high"
           href={liga}
           shadow="color"
           className="rounded-[18px]"
         />
       </div>
-
-      {showToggle && (
-        <div className="mx-auto mt-5 w-full max-w-[300px]">
-          <Segmented
-            label="Imagem exibida"
-            options={['Arte oficial', 'Minha foto'] as const}
-            value={showPhoto ? 'Minha foto' : 'Arte oficial'}
-            onChange={(v) => setShowPhoto(v === 'Minha foto')}
-          />
-        </div>
-      )}
 
       <div className="mt-6 text-center">
         <h1 className="text-[28px] font-extrabold leading-tight tracking-[-0.03em]">{card.name}</h1>
@@ -196,51 +150,6 @@ function Detail({ card }: { card: Card }) {
             options={VARIANTS}
             value={card.variant}
             onChange={(v) => update({ variant: v })}
-          />
-        </Row>
-        <Row label="Link da LigaPokemon" stacked>
-          <input
-            type="url"
-            inputMode="url"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            onBlur={saveLink}
-            onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
-            placeholder="Automático"
-            aria-invalid={linkInvalid}
-            className={inputClass}
-          />
-          <p className="break-all text-xs leading-relaxed text-muted">
-            {card.liga_url
-              ? 'Usando o link colado.'
-              : `Automático: ${ligaCardUrl(ligaName(card), card.card_number, card.set_total)}`}
-          </p>
-        </Row>
-        <Row label="Notas" stacked>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={saveNotes}
-            rows={3}
-            placeholder="Sem notas"
-            className={cx(inputClass, 'py-3')}
-          />
-        </Row>
-        <Row label="Minha foto" stacked>
-          <PhotoPicker
-            value={null}
-            existingUrl={photo.url}
-            onChange={(blob) => {
-              if (!blob) return
-              void setPhoto(card.id, blob).then(() => {
-                setShowPhoto(true)
-                toast.show('Foto salva', 'success')
-              })
-            }}
-            onRemoveExisting={() => {
-              void setPhoto(card.id, null)
-              setShowPhoto(false)
-            }}
           />
         </Row>
         <Row label="Adicionada em">
