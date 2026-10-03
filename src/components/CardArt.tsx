@@ -30,6 +30,18 @@ interface CardArtProps {
   children?: ReactNode
 }
 
+/** URLs para tentar em ordem: original, nova tentativa, e a mesma arte no outro idioma. */
+function imageCandidates(src: string): string[] {
+  if (!src.startsWith('https://assets.tcgdex.net/')) return [src]
+  const alt = src.replace(
+    /^(https:\/\/assets\.tcgdex\.net\/)(pt|en)\//,
+    (_, host: string, lang: string) => `${host}${lang === 'pt' ? 'en' : 'pt'}/`,
+  )
+  const list = [src, `${src}?tentativa=2`]
+  if (alt !== src) list.push(alt, `${alt}?tentativa=2`)
+  return list
+}
+
 function Placeholder({ name, number, total }: { name: string; number?: string | null; total?: string | null }) {
   return (
     <div className="@container flex h-full w-full flex-col items-center justify-center gap-2 rounded-[inherit] border border-line bg-[#15151D] p-3 text-center">
@@ -67,6 +79,12 @@ export function CardArt({
   const src = prefer === 'photo' ? (photo.url ?? official) : (official ?? photo.url)
   const [loaded, setLoaded] = useState<string | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
+  // O servidor de imagens do TCGdex às vezes responde 503: tentamos de novo e,
+  // se continuar falhando, usamos a mesma arte no outro idioma.
+  const [attempt, setAttempt] = useState<{ src: string; index: number } | null>(null)
+  const candidates = src ? imageCandidates(src) : []
+  const attemptIndex = attempt && attempt.src === src ? attempt.index : 0
+  const shownSrc = candidates[attemptIndex] ?? src
   // A cor sai sempre da versão leve (já em cache pela grade).
   const color = useDominantColor(imageUrl(image, 'low'), shadow === 'color' && !missing)
   const longPress = useLongPress(() => onLongPress?.())
@@ -91,13 +109,18 @@ export function CardArt({
           {!isLoaded && <div className="skeleton absolute inset-0" aria-hidden />}
           {src && (
             <img
-              src={src}
+              key={shownSrc}
+              src={shownSrc ?? undefined}
               alt={decorative ? '' : name}
               loading="lazy"
               decoding="async"
               draggable={false}
               onLoad={() => setLoaded(src)}
-              onError={() => setFailed(src)}
+              onError={() => {
+                if (attemptIndex + 1 < candidates.length) {
+                  window.setTimeout(() => setAttempt({ src, index: attemptIndex + 1 }), 700 * (attemptIndex + 1))
+                } else setFailed(src)
+              }}
               className={cx(
                 'h-full w-full object-cover transition-opacity duration-300',
                 isLoaded ? 'opacity-100' : 'opacity-0',

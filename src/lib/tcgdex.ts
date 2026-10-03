@@ -136,7 +136,7 @@ export async function getSets(lang: TcgLang): Promise<Map<string, TcgSetBrief>> 
 export interface SearchResult {
   lang: TcgLang
   cards: TcgCardBrief[]
-  /** true quando a busca no idioma pedido veio vazia e usamos o outro idioma */
+  /** true quando nada veio no idioma pedido e os resultados são todos do outro idioma */
   fellBack: boolean
 }
 
@@ -145,26 +145,42 @@ async function rawSearch(name: string, lang: TcgLang): Promise<TcgCardBrief[]> {
   return raw.map(toBrief)
 }
 
-/** Preenche imagens ausentes com as do outro idioma (mesmo id de carta). */
-async function fillImages(cards: TcgCardBrief[], fetchOther: () => Promise<TcgCardBrief[]>) {
-  if (cards.every((c) => c.image)) return cards
+/** Une duas listas pelo id: mantém a versão preferida e acrescenta as que só existem na outra. */
+function mergeById(preferred: TcgCardBrief[], other: TcgCardBrief[]): TcgCardBrief[] {
+  const otherImages = new Map(other.map((c) => [c.id, c.image]))
+  const seen = new Set(preferred.map((c) => c.id))
+  return [
+    ...preferred.map((c) => (c.image ? c : { ...c, image: otherImages.get(c.id) ?? null })),
+    ...other.filter((c) => !seen.has(c.id)),
+  ]
+}
+
+/** Ordem de lançamento dos sets (a lista /sets do TCGdex vem em ordem cronológica). */
+async function releaseOrder(): Promise<Map<string, number>> {
   try {
-    const other = new Map((await fetchOther()).map((c) => [c.id, c.image]))
-    return cards.map((c) => (c.image ? c : { ...c, image: other.get(c.id) ?? null }))
+    const sets = await getSets('en')
+    return new Map([...sets.keys()].map((id, i) => [id, i]))
   } catch {
-    return cards
+    return new Map()
   }
 }
 
+/**
+ * Busca por nome. Consulta os dois idiomas: lançamentos recentes e alguns sets
+ * costumam existir no TCGdex só em inglês. Resultados do set mais novo primeiro.
+ */
 export async function searchCards(query: string, lang: TcgLang): Promise<SearchResult> {
   const q = query.trim()
   if (q.length < 2) return { lang, cards: [], fellBack: false }
-  let cards = await rawSearch(q, lang)
-  if (cards.length === 0 && lang === 'pt') {
-    return { lang: 'en', cards: await rawSearch(q, 'en'), fellBack: true }
-  }
-  if (lang === 'pt') cards = await fillImages(cards, () => rawSearch(q, 'en'))
-  return { lang, cards, fellBack: false }
+  const [mine, other, order] = await Promise.all([
+    rawSearch(q, lang),
+    rawSearch(q, otherLang(lang)).catch(() => [] as TcgCardBrief[]),
+    releaseOrder(),
+  ])
+  const cards = mergeById(mine, other)
+  const rank = (c: TcgCardBrief) => order.get(setIdFromCardId(c.id)) ?? -1
+  cards.sort((a, b) => rank(b) - rank(a) || a.localId.localeCompare(b.localId, undefined, { numeric: true }))
+  return { lang, cards, fellBack: mine.length === 0 && cards.length > 0 }
 }
 
 /** Detalhe da carta: tenta o idioma pedido e cai para o outro; completa a imagem se faltar. */
@@ -178,6 +194,15 @@ export async function getCard(id: string, lang: TcgLang = 'pt'): Promise<TcgCard
   }
   if (!raw) return null
   const card: TcgCard = { ...toBrief(raw), lang: usedLang, set: toSetBrief(raw.set) }
+  if (usedLang !== lang) {
+    // Carta só existe no outro idioma: usa o nome do set no idioma pedido, se houver.
+    try {
+      const translated = (await getSets(lang)).get(card.set.id)
+      if (translated) card.set = { ...card.set, name: translated.name }
+    } catch {
+      // mantém o nome original
+    }
+  }
   if (!card.image) {
     try {
       const alt = await fetchJson<RawCard>(`/${otherLang(usedLang)}/cards/${enc}`)
@@ -189,18 +214,16 @@ export async function getCard(id: string, lang: TcgLang = 'pt'): Promise<TcgCard
   return card
 }
 
-/** Set completo, com todas as cartas. Prefere pt e completa imagens com en. */
+/** Set completo, com todas as cartas. Prefere pt; cartas que só existem em en entram também. */
 export async function getSet(setId: string, lang: TcgLang = 'pt'): Promise<TcgSet | null> {
   const enc = encodeURIComponent(setId)
-  let usedLang = lang
-  let raw = await fetchJson<RawSet>(`/${lang}/sets/${enc}`)
-  if (!raw) {
-    usedLang = otherLang(lang)
-    raw = await fetchJson<RawSet>(`/${usedLang}/sets/${enc}`)
-  }
-  if (!raw) return null
-  const fetchOther = async () =>
-    ((await fetchJson<RawSet>(`/${otherLang(usedLang)}/sets/${enc}`))?.cards ?? []).map(toBrief)
-  const cards = await fillImages((raw.cards ?? []).map(toBrief), fetchOther)
-  return { ...toSetBrief(raw), lang: usedLang, cards }
+  const [mine, other] = await Promise.all([
+    fetchJson<RawSet>(`/${lang}/sets/${enc}`),
+    fetchJson<RawSet>(`/${otherLang(lang)}/sets/${enc}`).catch(() => null),
+  ])
+  const base = mine ?? other
+  if (!base) return null
+  const cards = mergeById((mine?.cards ?? []).map(toBrief), (other?.cards ?? []).map(toBrief))
+  cards.sort((a, b) => a.localId.localeCompare(b.localId, undefined, { numeric: true }))
+  return { ...toSetBrief(base), lang: mine ? lang : otherLang(lang), cards }
 }

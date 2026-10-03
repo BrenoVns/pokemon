@@ -41,7 +41,8 @@ export default defineConfig({
             options: {
               cacheName: 'tcgdex-images',
               expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 60, purgeOnQuotaError: true },
-              cacheableResponse: { statuses: [0, 200] },
+              // Só respostas 200 de verdade: uma resposta opaca pode ser um erro 503 disfarçado.
+              cacheableResponse: { statuses: [200] },
             },
           },
           {
