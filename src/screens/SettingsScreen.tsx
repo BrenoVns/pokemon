@@ -1,45 +1,59 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Download, LogOut, Upload } from 'lucide-react'
+import { ArrowLeft, Download, HardDrive, Upload } from 'lucide-react'
 import { Button, ConfirmDialog, IconButton } from '../components/ui'
 import { useCollection } from '../hooks/useCollection'
 import { goBack } from '../hooks/useRoute'
 import { useToast } from '../hooks/useToast'
-import { downloadJson, makeBackup, parseBackup } from '../lib/backup'
+import { lastBackupAt, makeBackup, parseBackup, saveBackupFile, type Backup } from '../lib/backup'
 import { cx } from '../lib/cx'
-import { supabase } from '../lib/supabase'
-import type { Card } from '../lib/types'
+
+function formatBytes(n: number) {
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
 
 export function SettingsScreen() {
-  const { cards, collection, importCards, online } = useCollection()
+  const { cards, collection, importBackup } = useCollection()
   const toast = useToast()
   const fileInput = useRef<HTMLInputElement>(null)
-  const [pendingImport, setPendingImport] = useState<{ cards: Card[]; file: string } | null>(null)
+  const [pendingImport, setPendingImport] = useState<{ backup: Backup; file: string } | null>(null)
   const [mode, setMode] = useState<'merge' | 'replace'>('merge')
   const [busy, setBusy] = useState(false)
-  const [confirmLogout, setConfirmLogout] = useState(false)
-  const [email, setEmail] = useState<string | null>(null)
+  const [lastBackup, setLastBackup] = useState(lastBackupAt)
+  const [storage, setStorage] = useState<{ usage: number; persisted: boolean } | null>(null)
 
   useEffect(() => {
     let active = true
-    void supabase.auth.getSession().then(({ data }) => active && setEmail(data.session?.user.email ?? null))
+    void (async () => {
+      const est = await navigator.storage?.estimate?.()
+      const persisted = (await navigator.storage?.persisted?.()) ?? false
+      if (active && est) setStorage({ usage: est.usage ?? 0, persisted })
+    })()
     return () => {
       active = false
     }
-  }, [])
+  }, [cards])
 
-  function exportBackup() {
-    const date = new Date().toISOString().slice(0, 10)
-    downloadJson(makeBackup(collection, cards), `fichario-pokemon-${date}.json`)
-    toast.show('Backup exportado', 'success')
+  async function exportBackup() {
+    setBusy(true)
+    try {
+      await saveBackupFile(await makeBackup(collection, cards))
+      setLastBackup(lastBackupAt())
+      toast.show('Backup exportado', 'success')
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) toast.show('Não foi possível exportar', 'error')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function readFile(file: File | undefined) {
     if (!file) return
     try {
-      const parsed = parseBackup(await file.text())
-      if (parsed.length === 0) throw new Error('vazio')
+      const backup = parseBackup(await file.text())
+      if (backup.cards.length === 0) throw new Error('vazio')
       setMode('merge')
-      setPendingImport({ cards: parsed, file: file.name })
+      setPendingImport({ backup, file: file.name })
     } catch {
       toast.show('Arquivo de backup inválido', 'error')
     }
@@ -49,21 +63,27 @@ export function SettingsScreen() {
     if (!pendingImport) return
     setBusy(true)
     try {
-      const n = await importCards(pendingImport.cards, mode)
+      const n = await importBackup(pendingImport.backup, mode)
       toast.show(
         mode === 'replace'
           ? `Coleção substituída (${n} registros)`
-          : `${n} ${n === 1 ? 'registro importado' : 'registros importados'}`,
+          : n === 0
+            ? 'Nada novo: a coleção já estava atualizada'
+            : `${n} ${n === 1 ? 'registro importado' : 'registros importados'}`,
         'success',
       )
       setPendingImport(null)
     } catch (e) {
       console.error(e)
-      toast.show(e instanceof Error ? e.message : 'Falha ao importar o backup', 'error')
+      toast.show('Falha ao importar o backup', 'error')
     } finally {
       setBusy(false)
     }
   }
+
+  const lastLabel = lastBackup
+    ? new Date(lastBackup).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+    : 'nunca'
 
   return (
     <main className="mx-auto max-w-xl px-4 pb-16 pt-[max(16px,env(safe-area-inset-top))] md:px-8">
@@ -73,7 +93,6 @@ export function SettingsScreen() {
         </IconButton>
       </div>
       <h1 className="screen-title mt-1">Configurações</h1>
-      {email && <p className="mt-1.5 text-[15px] text-muted">Conectado como {email}</p>}
 
       <section className="mt-8 flex flex-col gap-3" aria-labelledby="backup-title">
         <h2 id="backup-title" className="text-sm font-bold uppercase tracking-wider text-muted">
@@ -81,18 +100,18 @@ export function SettingsScreen() {
         </h2>
         <div className="rounded-2xl border border-line bg-surface p-4">
           <p className="text-sm leading-relaxed text-muted">
-            O backup é um arquivo JSON com todos os dados das cartas. As fotos próprias continuam no Supabase e não
-            entram no arquivo.
+            Sua coleção fica guardada só neste aparelho. Exporte um backup de vez em quando e guarde o arquivo (Drive,
+            iCloud, e-mail). Ele inclui as fotos e serve também para levar a coleção para outro aparelho.
           </p>
+          <p className="mt-3 text-sm font-semibold">Último backup: {lastLabel}</p>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Button className="flex-1" onClick={exportBackup} disabled={cards.length === 0}>
+            <Button className="flex-1" onClick={() => void exportBackup()} disabled={cards.length === 0 || busy}>
               <Download size={18} aria-hidden /> Exportar backup
             </Button>
-            <Button variant="surface" className="flex-1" onClick={() => fileInput.current?.click()} disabled={!online}>
+            <Button variant="surface" className="flex-1" onClick={() => fileInput.current?.click()} disabled={busy}>
               <Upload size={18} aria-hidden /> Importar backup
             </Button>
           </div>
-          {!online && <p className="mt-2 text-xs text-muted">Importar exige conexão com a internet.</p>}
           <input
             ref={fileInput}
             type="file"
@@ -106,14 +125,24 @@ export function SettingsScreen() {
         </div>
       </section>
 
-      <section className="mt-8 flex flex-col gap-3" aria-labelledby="account-title">
-        <h2 id="account-title" className="text-sm font-bold uppercase tracking-wider text-muted">
-          Conta
-        </h2>
-        <Button variant="danger" onClick={() => setConfirmLogout(true)}>
-          <LogOut size={18} aria-hidden /> Sair
-        </Button>
-      </section>
+      {storage && (
+        <section className="mt-8 flex flex-col gap-3" aria-labelledby="storage-title">
+          <h2 id="storage-title" className="text-sm font-bold uppercase tracking-wider text-muted">
+            Armazenamento
+          </h2>
+          <div className="flex items-start gap-3 rounded-2xl border border-line bg-surface p-4 text-sm">
+            <HardDrive size={18} className="mt-0.5 shrink-0 text-muted" aria-hidden />
+            <div className="leading-relaxed">
+              <p className="font-semibold">{formatBytes(storage.usage)} usados neste aparelho</p>
+              <p className="text-muted">
+                {storage.persisted
+                  ? 'Armazenamento protegido: o navegador não apaga os dados sozinho.'
+                  : 'O navegador pode limpar os dados se faltar espaço. Instale o app na tela inicial e mantenha backups.'}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
 
       <p className="mt-10 text-center text-xs leading-relaxed text-muted">
         Artes e dados das cartas: TCGdex. Preços: LigaPokemon (abre no site deles).
@@ -129,7 +158,11 @@ export function SettingsScreen() {
         message={
           <div className="flex flex-col gap-3">
             <p>
-              {pendingImport?.file}: {pendingImport?.cards.length} registros.
+              {pendingImport?.file}: {pendingImport?.backup.cards.length} registros
+              {pendingImport && Object.keys(pendingImport.backup.photos).length > 0
+                ? `, ${Object.keys(pendingImport.backup.photos).length} fotos`
+                : ''}
+              .
             </p>
             <div role="radiogroup" aria-label="Modo de importação" className="flex flex-col gap-2">
               {(
@@ -156,19 +189,6 @@ export function SettingsScreen() {
             </div>
           </div>
         }
-      />
-
-      <ConfirmDialog
-        open={confirmLogout}
-        title="Sair da conta?"
-        message="A coleção salva neste aparelho continua guardada para quando você entrar de novo."
-        confirmLabel="Sair"
-        danger
-        onCancel={() => setConfirmLogout(false)}
-        onConfirm={() => {
-          setConfirmLogout(false)
-          void supabase.auth.signOut()
-        }}
       />
     </main>
   )

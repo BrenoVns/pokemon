@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { Backup } from '../lib/backup'
 import type { Card, CardIdentity, Collection, Condition, Language, Variant } from '../lib/types'
 
 export interface NewCardInput extends CardIdentity {
@@ -27,22 +28,18 @@ export type CardPatch = Partial<
 >
 
 export interface CollectionApi {
-  userId: string
   collection: Collection | null
   cards: Card[]
-  /** true enquanto não há nada (nem cache) para mostrar */
+  /** true até ler os dados salvos no aparelho */
   loading: boolean
-  online: boolean
-  pending: number
   /** Soma à quantidade se a combinação já existir. Retorna o id do registro final. */
   addCard: (input: NewCardInput, photo?: Blob | null) => Promise<{ id: string; merged: boolean }>
   /** Pode fundir com outro registro se a combinação passar a coincidir. Retorna o id final. */
   updateCard: (id: string, patch: CardPatch) => string
   deleteCard: (id: string) => void
   setPhoto: (id: string, photo: Blob | null) => Promise<void>
-  refresh: () => Promise<void>
-  /** Importação de backup (exige conexão). */
-  importCards: (cards: Card[], mode: 'merge' | 'replace') => Promise<number>
+  /** Importa um backup. Retorna quantos registros foram gravados. */
+  importBackup: (backup: Backup, mode: 'merge' | 'replace') => Promise<number>
 }
 
 export const CollectionContext = createContext<CollectionApi | null>(null)

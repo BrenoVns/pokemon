@@ -93,7 +93,7 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
         <h1 className="screen-title">{name}</h1>
         <p className="mt-1.5 text-[15px] font-medium text-muted">
           {ownedCount}
-          {official ? ` de ${official}` : ''} {ownedCount === 1 ? 'carta' : 'cartas'}
+          {official ? ` de ${official}` : ''} {ownedCount === 1 && !official ? 'carta' : 'cartas'}
         </p>
         {official ? (
           <div className="mt-3">

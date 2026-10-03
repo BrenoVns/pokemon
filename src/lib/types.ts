@@ -17,14 +17,12 @@ export const CONDITION_LABELS: Record<Condition, string> = {
 
 export interface Collection {
   id: string
-  user_id: string
   name: string
   created_at: string
 }
 
 export interface Card {
   id: string
-  user_id: string
   collection_id: string
   tcgdex_id: string | null
   name: string
@@ -34,7 +32,7 @@ export interface Card {
   set_total: string | null
   /** URL base do TCGdex (sem /low.webp ou /high.webp) */
   image_url: string | null
-  /** Caminho no bucket card-photos: <user_id>/<arquivo> */
+  /** Chave da foto própria no armazenamento local (IndexedDB) */
   photo_path: string | null
   liga_url: string | null
   quantity: number
