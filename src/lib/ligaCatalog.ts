@@ -123,8 +123,18 @@ export function plainNumber(n: string | null | undefined): string {
   return /^\d+$/.test(v) ? String(parseInt(v, 10)) : v.toUpperCase()
 }
 
+/** Edição lançada no Brasil (a Liga só dá nome em português para essas). */
+export function isBrazilian(edition: LigaEdition): boolean {
+  return Boolean(edition.namePt)
+}
+
+/** Brasileiras primeiro; dentro de cada grupo, as mais novas primeiro. */
 function byRecent(a: LigaCard, b: LigaCard) {
-  return b.edition.release.localeCompare(a.edition.release) || a.num.localeCompare(b.num, undefined, { numeric: true })
+  return (
+    Number(isBrazilian(b.edition)) - Number(isBrazilian(a.edition)) ||
+    b.edition.release.localeCompare(a.edition.release) ||
+    a.num.localeCompare(b.num, undefined, { numeric: true })
+  )
 }
 
 /**

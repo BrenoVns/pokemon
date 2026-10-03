@@ -43,6 +43,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 function decode(s) {
   return s
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
     .replace(/&amp;/g, '&')
     .replace(/&#0?39;|&rsquo;|&apos;/g, "'")
     .replace(/&quot;/g, '"')
@@ -239,7 +241,7 @@ async function main() {
     const cards = JSON.parse(await readFile(cachePath(ed), 'utf8'))
     if (!cards.length) continue
     const idx = outEditions.length
-    outEditions.push([ed.id, ed.code, ed.namePt, ed.nameEn, ed.release, ed.group])
+    outEditions.push([ed.id, ed.code, decode(ed.namePt), decode(ed.nameEn), ed.release, ed.group])
     for (const c of cards) {
       c.label = fromQuery(c.label)
       c.num = fromQuery(c.num)
