@@ -1,21 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Loader2, PenLine, Search } from 'lucide-react'
 import { useCollection } from '../hooks/useCollection'
 import { useToast } from '../hooks/useToast'
 import type { AddSheetOptions } from '../hooks/useAddSheet'
 import { cx } from '../lib/cx'
-import { findLigaCard, loadCatalog, plainNumber, searchCatalog, type Catalog, type LigaCard } from '../lib/ligaCatalog'
-import { normalize } from '../lib/stats'
-import {
-  getCard,
-  getSets,
-  searchCards,
-  setIdFromCardId,
-  type SearchResult,
-  type TcgCardBrief,
-  type TcgLang,
-  type TcgSetBrief,
-} from '../lib/tcgdex'
+import { loadCatalog, searchCatalog, type Catalog, type LigaCard } from '../lib/ligaCatalog'
 import {
   CONDITION_LABELS,
   CONDITIONS,
@@ -33,43 +22,36 @@ const MAX_RESULTS = 90
 
 type Step = 'search' | 'form'
 
-/** Identidade da carta a partir do catálogo da Liga (com a carta do TCGdex equivalente, se houver). */
-function ligaIdentity(card: LigaCard, tcg: TcgCardBrief | null): CardIdentity {
+/** Identidade da carta a partir do catálogo da Liga. */
+function ligaIdentity(card: LigaCard): CardIdentity {
   return {
-    tcgdex_id: tcg?.id ?? null,
-    name: tcg?.name ?? card.name,
+    tcgdex_id: null,
+    name: card.name,
     name_en: card.name,
     liga_image: card.image,
     set_id: `liga:${card.edition.id}`,
     set_name: card.edition.name,
     card_number: card.num,
     set_total: card.total,
-    image_url: tcg?.image ?? null,
+    image_url: null,
   }
 }
-
-const matchKey = (name: string, num: string | null | undefined) => `${normalize(name)}|${plainNumber(num)}`
 
 export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; onClose: () => void }) {
   const { addCard } = useCollection()
   const toast = useToast()
 
   const from = options.from
-  const [step, setStep] = useState<Step>(options.tcgdexId || options.liga || from ? 'form' : 'search')
-  const [lang, setLang] = useState<TcgLang>('pt')
+  const [step, setStep] = useState<Step>(options.liga || from ? 'form' : 'search')
   const [query, setQuery] = useState('')
-  const [result, setResult] = useState<(SearchResult & { query: string }) | null>(null)
-  const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState(false)
-  const [setNames, setSetNames] = useState<Map<string, TcgSetBrief>>(new Map())
+  const deferredQuery = useDeferredValue(query)
 
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [catalogState, setCatalogState] = useState<'loading' | 'ok' | 'none'>('loading')
   const [selected, setSelected] = useState<CardIdentity | null>(
-    from ?? (options.liga ? ligaIdentity(options.liga, null) : null),
+    from ?? (options.liga ? ligaIdentity(options.liga) : null),
   )
-  const [selectingId, setSelectingId] = useState<string | null>(options.tcgdexId ?? null)
-  const fromManual = Boolean(from && !from.tcgdex_id && !from.set_id?.startsWith('liga:'))
+  const fromManual = Boolean(from && !from.set_id?.startsWith('liga:'))
   const [manual, setManual] = useState(fromManual)
 
   const [quantity, setQuantity] = useState(1)
@@ -91,7 +73,6 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
     if (step === 'search') searchInput.current?.focus()
   }, [step])
 
-  // Catálogo da Liga (fonte principal da busca)
   useEffect(() => {
     let active = true
     loadCatalog().then((c) => {
@@ -104,91 +85,8 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
     }
   }, [])
 
-  // Nomes dos sets para exibir nos resultados
-  useEffect(() => {
-    let active = true
-    getSets(result?.lang ?? lang)
-      .then((m) => active && setSetNames(m))
-      .catch(() => {})
-    return () => {
-      active = false
-    }
-  }, [lang, result?.lang])
-
-  // Busca com debounce
-  useEffect(() => {
-    const q = query.trim()
-    if (q.length < 2) return
-    let active = true
-    const t = window.setTimeout(() => {
-      setSearching(true)
-      setSearchError(false)
-      searchCards(q, lang)
-        .then((r) => active && setResult({ ...r, query: q }))
-        .catch(() => active && setSearchError(true))
-        .finally(() => active && setSearching(false))
-    }, 350)
-    return () => {
-      active = false
-      window.clearTimeout(t)
-    }
-  }, [query, lang])
-
-  // Carta pré-selecionada (ex.: "+" numa carta faltante do set)
-  useEffect(() => {
-    if (!options.tcgdexId) return
-    void choose({ id: options.tcgdexId, localId: '', name: '', image: null })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- só na abertura
-  }, [])
-
-  async function choose(brief: TcgCardBrief) {
-    setSelectingId(brief.id)
-    try {
-      const card = await getCard(brief.id, result?.lang ?? lang)
-      if (!card) throw new Error('Carta não encontrada')
-      const identity: CardIdentity = {
-        tcgdex_id: card.id,
-        name: card.name,
-        name_en: card.nameEn ?? brief.nameEn ?? null,
-        set_id: card.set.id,
-        set_name: card.set.name,
-        card_number: card.localId,
-        set_total: card.set.official ? String(card.set.official) : null,
-        image_url: card.image,
-      }
-      // Achou a mesma carta no catálogo da Liga: usa a imagem e o link exato de lá.
-      const liga = catalog ? findLigaCard(catalog, identity) : null
-      if (liga) identity.liga_image = liga.image
-      setLigaUrl(liga?.url ?? '')
-      setSelected(identity)
-    } catch {
-      if (!brief.name) {
-        toast.show('Não foi possível carregar a carta. Verifique a conexão.', 'error')
-        setStep('search')
-        setSelectingId(null)
-        return
-      }
-      // Sem detalhe (offline): usa o que a busca já trouxe.
-      const setId = setIdFromCardId(brief.id)
-      const set = setNames.get(setId)
-      setSelected({
-        tcgdex_id: brief.id,
-        name: brief.name,
-        name_en: brief.nameEn ?? null,
-        set_id: setId,
-        set_name: set?.name ?? setId,
-        card_number: brief.localId,
-        set_total: set?.official ? String(set.official) : null,
-        image_url: brief.image,
-      })
-    }
-    setManual(false)
-    setSelectingId(null)
-    setStep('form')
-  }
-
-  function chooseLiga(card: LigaCard, tcg: TcgCardBrief | null) {
-    setSelected(ligaIdentity(card, tcg))
+  function chooseLiga(card: LigaCard) {
+    setSelected(ligaIdentity(card))
     setLigaUrl(card.url)
     setManual(false)
     setStep('form')
@@ -208,7 +106,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
         }
       : null
     : selected
-  const canSave = Boolean(identity) && !saving && !selectingId
+  const canSave = Boolean(identity) && !saving
 
   async function save() {
     if (!identity || !canSave) return
@@ -221,7 +119,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
           condition,
           language,
           variant,
-          liga_url: ligaUrl.trim() || null,
+          liga_url: manual ? null : ligaUrl.trim() || null,
           notes: from?.notes ?? null,
         },
         null,
@@ -234,32 +132,12 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
     }
   }
 
-  // Resultados: catálogo da Liga primeiro; TCGdex só com o que a Liga não tem.
-  const { ligaResults, tcgResults, ligaTotal } = useMemo(() => {
-    const q = query.trim()
-    if (q.length < 2) return { ligaResults: [], tcgResults: [], ligaTotal: 0 }
-    const tcgCards = result && result.query === q ? result.cards : []
-    // Busca em português: o TCGdex traduz para o nome em inglês usado pela Liga.
-    const englishNames = tcgCards.map((c) => c.nameEn ?? '').filter(Boolean)
-    const liga = catalog ? searchCatalog(catalog, q, englishNames) : []
-    const tcgByKey = new Map<string, TcgCardBrief>()
-    for (const c of tcgCards) {
-      const total = setNames.get(setIdFromCardId(c.id))?.official
-      tcgByKey.set(`${matchKey(c.nameEn ?? c.name, c.localId)}|${total ?? ''}`, c)
-    }
-    const used = new Set<TcgCardBrief>()
-    const ligaResults = liga.slice(0, MAX_RESULTS).map((card) => {
-      const tcg = tcgByKey.get(`${matchKey(card.name, card.num)}|${plainNumber(card.total)}`) ?? null
-      if (tcg) used.add(tcg)
-      return { card, tcg }
-    })
-    const ligaKeys = new Set(liga.map((c) => matchKey(c.name, c.num)))
-    const tcgResults = tcgCards
-      .filter((c) => !used.has(c) && !(catalog && ligaKeys.has(matchKey(c.nameEn ?? c.name, c.localId))))
-      .slice(0, MAX_RESULTS)
-    return { ligaResults, tcgResults, ligaTotal: liga.length }
-  }, [query, result, catalog, setNames])
-  const nothingYet = ligaResults.length === 0 && tcgResults.length === 0
+  const { results, total } = useMemo(() => {
+    if (!catalog || deferredQuery.trim().length < 2) return { results: [], total: 0 }
+    const all = searchCatalog(catalog, deferredQuery)
+    return { results: all.slice(0, MAX_RESULTS), total: all.length }
+  }, [catalog, deferredQuery])
+  const typed = query.trim().length >= 2
 
   const title = from ? 'Duplicar carta' : 'Adicionar carta'
 
@@ -279,111 +157,68 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
     >
       {step === 'search' ? (
         <div className="flex flex-col gap-4">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search
-                size={18}
-                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted"
-                aria-hidden
-              />
-              <input
-                ref={searchInput}
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Nome da carta (ex.: Gengar ex)"
-                aria-label="Buscar carta por nome"
-                className={cx(inputClass, 'pl-11')}
-              />
-            </div>
-            <div className="w-[112px] shrink-0">
-              <Segmented
-                label="Idioma da busca"
-                options={['PT', 'EN'] as const}
-                value={lang === 'pt' ? 'PT' : 'EN'}
-                onChange={(v) => setLang(v === 'PT' ? 'pt' : 'en')}
-              />
-            </div>
+          <div className="relative">
+            <Search
+              size={18}
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted"
+              aria-hidden
+            />
+            <input
+              ref={searchInput}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Nome da carta (ex.: Gengar ex)"
+              aria-label="Buscar carta por nome"
+              className={cx(inputClass, 'pl-11')}
+            />
           </div>
+          <p className="-mt-2 text-xs text-muted">
+            A Liga usa os nomes em inglês. Para treinadores e itens, busque em inglês (ex.: Professor&apos;s Research).
+          </p>
 
-          {searchError && <p className="text-sm text-danger">Não foi possível buscar. Verifique a conexão.</p>}
-
-          {catalogState === 'none' && query.trim().length >= 2 && (
-            <p className="text-xs text-muted">Catálogo da Liga indisponível agora — mostrando só o TCGdex.</p>
-          )}
-
-          {(searching || catalogState === 'loading') && nothingYet && query.trim().length >= 2 ? (
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4" aria-busy="true" aria-label="Buscando">
+          {catalogState === 'none' ? (
+            <p className="py-6 text-center text-sm text-danger">
+              Não foi possível carregar o catálogo de cartas. Verifique a conexão e abra de novo.
+            </p>
+          ) : catalogState === 'loading' && typed ? (
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4" aria-busy="true" aria-label="Carregando catálogo">
               {Array.from({ length: 9 }, (_, i) => (
                 <div key={i} className="skeleton aspect-[63/88] rounded-[var(--radius-card)]" />
               ))}
             </div>
-          ) : !nothingYet ? (
-            <>
-              {ligaResults.length > 0 && (
-                <section aria-label="Resultados da LigaPokemon" className="flex flex-col gap-3">
-                  <ul className="grid grid-cols-3 gap-x-3 gap-y-4 sm:grid-cols-4">
-                    {ligaResults.map(({ card, tcg }) => (
-                      <li key={card.url} className="min-w-0">
-                        <CardArt
-                          name={card.name}
-                          number={card.num}
-                          total={card.total}
-                          ligaImage={card.image}
-                          image={tcg?.image}
-                          onClick={() => chooseLiga(card, tcg)}
-                          hrefLabel={`Selecionar ${card.label}, ${card.edition.name}`}
-                        />
-                        <p className="mt-1.5 truncate text-xs font-semibold">{card.edition.name}</p>
-                        <p className="truncate text-xs tabular-nums text-muted">
-                          {card.total ? `${card.num}/${card.total}` : `nº ${card.num}`}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                  {ligaTotal > MAX_RESULTS && (
-                    <p className="text-center text-xs text-muted">
-                      Mostrando {MAX_RESULTS} de {ligaTotal}. Refine a busca (ex.: "Pikachu ex").
+          ) : results.length > 0 ? (
+            <section aria-label="Resultados" className="flex flex-col gap-3">
+              <ul
+                className={cx(
+                  'grid grid-cols-3 gap-x-3 gap-y-4 sm:grid-cols-4',
+                  query !== deferredQuery && 'opacity-60',
+                )}
+              >
+                {results.map((card) => (
+                  <li key={card.url} className="min-w-0">
+                    <CardArt
+                      name={card.name}
+                      number={card.num}
+                      total={card.total}
+                      ligaImage={card.image}
+                      onClick={() => chooseLiga(card)}
+                      hrefLabel={`Selecionar ${card.label}, ${card.edition.name}`}
+                    />
+                    <p className="mt-1.5 truncate text-xs font-semibold">{card.edition.name}</p>
+                    <p className="truncate text-xs tabular-nums text-muted">
+                      {card.total ? `${card.num}/${card.total}` : `nº ${card.num}`}
                     </p>
-                  )}
-                </section>
+                  </li>
+                ))}
+              </ul>
+              {total > MAX_RESULTS && (
+                <p className="text-center text-xs text-muted">
+                  Mostrando {MAX_RESULTS} de {total}. Refine a busca (ex.: &quot;Pikachu ex&quot;).
+                </p>
               )}
-
-              {tcgResults.length > 0 && (
-                <section aria-label="Outras fontes" className={cx('flex flex-col gap-3', searching && 'opacity-60')}>
-                  {ligaResults.length > 0 && (
-                    <h3 className="mt-2 text-sm font-bold text-muted">Outras fontes (TCGdex)</h3>
-                  )}
-                  <ul className="grid grid-cols-3 gap-x-3 gap-y-4 sm:grid-cols-4">
-                    {tcgResults.map((c) => {
-                      const setId = setIdFromCardId(c.id)
-                      const isSel = selectingId === c.id
-                      return (
-                        <li key={c.id} className="min-w-0">
-                          <CardArt
-                            name={c.name}
-                            number={c.localId}
-                            image={c.image}
-                            onClick={() => void choose(c)}
-                            hrefLabel={`Selecionar ${c.name} ${c.localId}`}
-                            className={cx(isSel && 'ring-[3px] ring-accent ring-offset-2 ring-offset-bg')}
-                          >
-                            {isSel && (
-                              <span className="absolute inset-0 flex items-center justify-center bg-black/40">
-                                <Loader2 size={22} className="animate-spin" aria-hidden />
-                              </span>
-                            )}
-                          </CardArt>
-                          <p className="mt-1.5 truncate text-xs font-semibold">{setNames.get(setId)?.name ?? setId}</p>
-                          <p className="truncate text-xs tabular-nums text-muted">nº {c.localId}</p>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </section>
-              )}
-            </>
-          ) : query.trim().length >= 2 && !searching ? (
+            </section>
+          ) : typed ? (
             <p className="py-6 text-center text-sm text-muted">Nenhuma carta encontrada com esse nome.</p>
           ) : (
             <p className="py-6 text-center text-sm text-muted">Digite pelo menos 2 letras do nome da carta.</p>
@@ -463,7 +298,6 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
                   name={selected.name}
                   number={selected.card_number}
                   total={selected.set_total}
-                  image={selected.image_url}
                   ligaImage={selected.liga_image}
                   className="ring-[3px] ring-accent ring-offset-2 ring-offset-bg"
                 />

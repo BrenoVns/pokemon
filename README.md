@@ -1,38 +1,52 @@
 # Fichário Pokémon
 
-Um fichário digital, pessoal, para organizar a sua coleção de cartas Pokémon. Você cadastra as cartas, vê a arte de cada uma numa grade e, ao tocar na arte, abre a página da carta na [LigaPokemon](https://www.ligapokemon.com.br) em nova aba para consultar o preço.
+Um fichário digital, pessoal, para organizar a sua coleção de cartas Pokémon. Você busca a carta, adiciona à coleção, vê a arte de cada uma numa grade e, ao tocar na arte, abre a página exata da carta na [LigaPokemon](https://www.ligapokemon.com.br) em nova aba para consultar o preço.
 
-- **Artes e dados das cartas:** [TCGdex](https://tcgdex.dev), API pública e gratuita (português primeiro, inglês quando faltar).
-- **Sem conta e sem servidor:** cartas e fotos ficam salvas no próprio aparelho (IndexedDB do navegador).
+- **Cartas e imagens:** catálogo da LigaPokemon (todas as edições, com link exato e imagem de cada carta), gerado pelo script `npm run catalogo-liga` e publicado junto com o app.
+- **Sem conta e sem servidor:** a coleção fica salva no próprio aparelho (IndexedDB do navegador).
 - **App instalável (PWA):** abre e mostra a coleção mesmo offline.
 - **Hospedagem:** GitHub Pages, publicado pelo GitHub Actions a cada push na `main`.
 
-> O app **não** busca preços nem faz scraping da LigaPokemon. Ele só monta o link da carta (ou usa o link que você colar).
+> O app não acessa a LigaPokemon nem busca preços: ele só lê o catálogo publicado e abre o link da carta.
 
 ---
 
 ## Como funciona
 
-| Gesto | O que acontece |
-| --- | --- |
-| Tocar na **arte** | Abre a carta na LigaPokemon (nova aba) |
-| Tocar no **nome** abaixo da carta, ou **segurar** a arte | Abre o detalhe para editar |
-| Botão **+** na barra inferior | Adicionar carta (busca no TCGdex ou cadastro manual) |
-| **Sets** | Progresso por set; dentro do set, as cartas que faltam aparecem em cinza com um **+** |
+| Gesto                                                    | O que acontece                                                                         |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Tocar na **arte**                                        | Abre a carta na LigaPokemon (nova aba)                                                 |
+| Tocar no **nome** abaixo da carta, ou **segurar** a arte | Abre o detalhe para editar                                                             |
+| Botão **+** na barra inferior                            | Adicionar carta (busca no catálogo da Liga ou cadastro manual)                         |
+| **Edições**                                              | Progresso por edição; dentro dela, as cartas que faltam aparecem em cinza com um **+** |
 
-Cada combinação de carta + condição + idioma + variante é um registro. Se você adicionar de novo a mesma combinação, a quantidade é somada.
+- A busca usa os **nomes em inglês**, como na Liga ("Professor's Research"). Pokémon têm o mesmo nome nas duas línguas. Pontuação e "&"/"e" são ignorados: "pikachu e zekrom" acha "Pikachu & Zekrom-GX".
+- Edições lançadas no Brasil aparecem primeiro; depois as estrangeiras (japonesas, chinesas, promos).
+- Cada combinação de carta + condição + idioma + variante é um registro. Adicionar de novo a mesma combinação soma a quantidade.
 
-Link automático da Liga, quando você não cola um:
+---
 
+## Catálogo da LigaPokemon
+
+O arquivo `public/liga/catalog.json` tem todas as edições e cartas da Liga (nome, número, edição, link e imagem; sem preços). Ele é gerado por um script que precisa rodar numa **conexão residencial no Brasil**: a Liga bloqueia servidores de nuvem (por isso não roda no GitHub Actions).
+
+```bash
+npm run catalogo-liga                  # baixa edições novas ou recentes (uso normal, poucos minutos)
+npm run catalogo-liga -- --ed=30C,DLR  # só estas edições (pelo código da Liga)
+npm run catalogo-liga -- --continuar   # retoma um download interrompido
+npm run catalogo-liga -- --full        # baixa tudo de novo (cerca de 1 hora)
+npm run catalogo-liga -- --montar      # só remonta o arquivo com o que já está em cache
 ```
-https://www.ligapokemon.com.br/?view=cards/card&card=Gengar%20ex(154/128)
-```
+
+O script vai devagar de propósito (uma requisição por vez, com pausa que aumenta quando a Liga pede calma) e guarda o progresso em `scripts/.liga-cache/`. Depois de rodar, faça commit e push do `public/liga/catalog.json` para publicar.
+
+Quando sair uma coleção nova, rode `npm run catalogo-liga` e publique.
 
 ---
 
 ## Onde ficam os dados
 
-Tudo fica **só no aparelho** em que você cadastrou (não sincroniza entre celular e computador). Se apagar os dados do navegador ou desinstalar o app, a coleção some, então use **Configurações → Exportar backup** de vez em quando. O arquivo JSON inclui as fotos e também serve para levar a coleção para outro aparelho (Importar backup → mesclar ou substituir).
+Tudo fica **só no aparelho** em que você cadastrou (não sincroniza entre celular e computador). Se apagar os dados do navegador ou desinstalar o app, a coleção some, então use **Configurações → Exportar backup** de vez em quando. O arquivo JSON também serve para levar a coleção para outro aparelho (Importar backup → mesclar ou substituir). Em **Configurações → Apagar todas as cartas** dá para recomeçar do zero.
 
 ## Instalar como app no celular
 
@@ -64,22 +78,21 @@ npm run icons      # regenera os ícones PNG do PWA
 
 ```
 src/
-  components/   UI (arte da carta, grades, bottom sheet, provider da coleção…)
-  hooks/        estado da coleção, rotas, toque longo, cor dominante…
+  components/      UI (arte da carta, grades, bottom sheet, provider da coleção…)
+  hooks/           estado da coleção, rotas, toque longo…
   lib/
-    tcgdex.ts   busca e cache (memória + IndexedDB) da API do TCGdex
-    liga.ts     montagem dos links da LigaPokemon
-  screens/      Coleção, Sets, Set, Detalhe, Configurações
+    ligaCatalog.ts leitura e busca no catálogo da Liga
+    liga.ts        links da LigaPokemon (cadastro manual)
+  screens/         Minha Coleção, Edições, Edição, Detalhe, Configurações
+scripts/
+  liga-catalog.mjs gera public/liga/catalog.json
 ```
 
 Notas técnicas:
 
-- **Offline:** a coleção e as fotos ficam no IndexedDB; as artes e respostas do TCGdex ficam em cache.
-- **Várias coleções:** cada carta já aponta para uma coleção (`collection_id`); hoje a interface usa só a "Coleção principal".
-- **Sombra colorida:** a cor é extraída da arte via canvas. Algumas imagens do TCGdex vêm com cabeçalho CORS duplicado e não podem ser lidas; nesse caso a sombra fica neutra.
+- **Offline:** a coleção fica no IndexedDB; o catálogo da Liga fica em cache pelo service worker.
+- **Várias coleções:** cada carta já aponta para uma coleção (`collection_id`); hoje a interface usa só "Minha Coleção".
 
 ## Endereço do app
-
-Depois do deploy, o app fica em:
 
 **https://brenovns.github.io/pokemon/**

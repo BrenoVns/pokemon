@@ -5,13 +5,14 @@ import { dataUrlToBlob } from '../lib/backup'
 import { idbGet, idbSet } from '../lib/idb'
 import { deletePhoto, newPhotoPath, savePhoto } from '../lib/photos'
 import { findLigaCard, loadCatalog } from '../lib/ligaCatalog'
-import { getCard } from '../lib/tcgdex'
 import { comboKey, type Card, type Collection } from '../lib/types'
 
 // Tudo fica no próprio aparelho (IndexedDB). O formato já prevê várias coleções.
 const CARDS_KEY = 'cards'
 const COLLECTION_KEY = 'collection'
 const LIGA_BACKFILL_KEY = 'fichario:ligaBackfill'
+// Aumente quando a regra de associação com a Liga mudar, para reprocessar as cartas salvas.
+const LIGA_BACKFILL_VERSION = 2
 
 function byNewest(a: Card, b: Card) {
   return b.created_at.localeCompare(a.created_at)
@@ -59,22 +60,6 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  /** Cartas salvas antes de guardarmos o nome em inglês: busca no TCGdex (usado no link da Liga). */
-  const fillEnglishNames = useCallback(async () => {
-    const missing = cardsRef.current.filter((c) => c.tcgdex_id && c.name_en === undefined)
-    for (const c of missing) {
-      try {
-        const en = await getCard(c.tcgdex_id!, 'en')
-        if (!en) continue
-        const name_en = en.lang === 'en' ? en.name : null
-        cardsRef.current = cardsRef.current.map((x) => (x.id === c.id ? { ...x, name_en } : x))
-      } catch {
-        return // offline: tenta na próxima abertura
-      }
-    }
-    if (missing.length) commitCards(cardsRef.current)
-  }, [commitCards])
-
   /**
    * Completa as cartas salvas com o link exato e a imagem do catálogo da Liga.
    * Roda de novo sempre que sai um catálogo novo (ele pode trazer cartas que faltavam).
@@ -88,7 +73,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     } catch {
       // indisponível
     }
-    if (done === catalog.generated) return
+    const stamp = `${catalog.generated}|${LIGA_BACKFILL_VERSION}`
+    if (done === stamp) return
     let changed = false
     cardsRef.current = cardsRef.current.map((c) => {
       if (c.liga_image || !c.card_number) return c
@@ -99,15 +85,15 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     })
     if (changed) commitCards(cardsRef.current)
     try {
-      localStorage.setItem(LIGA_BACKFILL_KEY, catalog.generated)
+      localStorage.setItem(LIGA_BACKFILL_KEY, stamp)
     } catch {
       // indisponível
     }
   }, [commitCards])
 
   useEffect(() => {
-    if (!loading) void fillEnglishNames().then(fillFromLiga)
-  }, [loading, fillEnglishNames, fillFromLiga])
+    if (!loading) void fillFromLiga()
+  }, [loading, fillFromLiga])
 
   const attachPhoto = useCallback(async (card: Card, blob: Blob): Promise<Card> => {
     const path = newPhotoPath(card.id)

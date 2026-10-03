@@ -42,25 +42,6 @@ export default defineConfig({
             options: { cacheName: 'liga-catalog', cacheableResponse: { statuses: [200] } },
           },
           {
-            urlPattern: ({ url }) => url.origin === 'https://assets.tcgdex.net',
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'tcgdex-images',
-              expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 60, purgeOnQuotaError: true },
-              // Só respostas 200 de verdade: uma resposta opaca pode ser um erro 503 disfarçado.
-              cacheableResponse: { statuses: [200] },
-            },
-          },
-          {
-            urlPattern: ({ url }) => url.origin === 'https://api.tcgdex.net',
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'tcgdex-api',
-              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 14 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
             urlPattern: ({ url }) =>
               url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',
             handler: 'CacheFirst',

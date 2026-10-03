@@ -51,7 +51,6 @@ export function SetsScreen() {
                     {c && (
                       <CardArt
                         name={c.name}
-                        image={c.image_url}
                         ligaImage={c.liga_image}
                         photoPath={c.photo_path}
                         className="rounded-md"

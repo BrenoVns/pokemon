@@ -82,12 +82,10 @@ function Detail({ card }: { card: Card }) {
           name={card.name}
           number={card.card_number}
           total={card.set_total}
-          image={card.image_url}
           ligaImage={card.liga_image}
           photoPath={card.photo_path}
-          quality="high"
           href={liga}
-          shadow="color"
+          shadow="soft"
           className="rounded-[18px]"
         />
       </div>

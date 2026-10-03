@@ -26,12 +26,11 @@ export function ShowcaseGrid({ cards }: { cards: Card[] }) {
             name={c.name}
             number={c.card_number}
             total={c.set_total}
-            image={c.image_url}
             ligaImage={c.liga_image}
             photoPath={c.photo_path}
             href={ligaUrlFor(c)}
             onLongPress={() => openDetail(c)}
-            shadow="color"
+            shadow="soft"
           >
             {c.quantity > 1 && (
               <span className="absolute right-2 top-2 rounded-full bg-[rgba(10,10,15,0.82)] px-2.5 py-1 text-xs font-bold tabular-nums text-fg backdrop-blur">
@@ -67,7 +66,6 @@ export function GalleryGrid({ cards }: { cards: Card[] }) {
             name={c.name}
             number={c.card_number}
             total={c.set_total}
-            image={c.image_url}
             ligaImage={c.liga_image}
             photoPath={c.photo_path}
             href={ligaUrlFor(c)}
@@ -135,7 +133,6 @@ function ListRow({ card: c }: { card: Card }) {
           name={c.name}
           number={c.card_number}
           total={c.set_total}
-          image={c.image_url}
           ligaImage={c.liga_image}
           photoPath={c.photo_path}
           href={liga}

@@ -168,7 +168,7 @@ export function SettingsScreen() {
       />
 
       <p className="mt-10 text-center text-xs leading-relaxed text-muted">
-        Artes e dados das cartas: TCGdex. Preços: LigaPokemon (abre no site deles).
+        Cartas, imagens e preços: LigaPokemon (o preço abre no site deles).
       </p>
 
       <ConfirmDialog

@@ -24,6 +24,7 @@ export interface Collection {
 export interface Card {
   id: string
   collection_id: string
+  /** Legado (versões antigas usavam o TCGdex); sempre null nas cartas novas */
   tcgdex_id: string | null
   name: string
   /** Nome em inglês, usado no link da LigaPokemon (null no cadastro manual) */

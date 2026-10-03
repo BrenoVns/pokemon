@@ -39,11 +39,22 @@ export interface Catalog {
   cards: LigaCard[]
   byEdition: Map<number, LigaCard[]>
   editionById: Map<number, LigaEdition>
-  /** nome normalizado de cada carta, na mesma ordem de cards */
+  /** nome reduzido (compactName) de cada carta, na mesma ordem de cards */
   searchNames: string[]
 }
 
 const SITE = 'https://www.ligapokemon.com.br/'
+
+/**
+ * Nome reduzido para comparação: sem acento, pontuação, hífen e sem "&"/"e"/"and".
+ * Assim "Pikachu & Zekrom-GX", "Pikachu & Zekrom GX" e "Pikachu e Zekrom GX" ficam iguais.
+ */
+export function compactName(value: string): string {
+  return normalize(value)
+    .replace(/&/g, ' ')
+    .replace(/\b(e|and)\b/g, ' ')
+    .replace(/[^a-z0-9]/g, '')
+}
 
 function encodeLiga(value: string): string {
   return encodeURIComponent(value).replace(/%2F/gi, '/').replace(/%28/g, '(').replace(/%29/g, ')')
@@ -86,7 +97,7 @@ function build(raw: RawCatalog): Catalog {
       url: ligaCardPageUrl(label, edition.code, num),
     }
     cards.push(card)
-    searchNames.push(normalize(name))
+    searchNames.push(compactName(name))
     const list = byEdition.get(edition.id)
     if (list) list.push(card)
     else byEdition.set(edition.id, [card])
@@ -137,30 +148,26 @@ function byRecent(a: LigaCard, b: LigaCard) {
   )
 }
 
-/**
- * Busca por nome. A Liga usa nomes em inglês; `alsoNames` permite incluir nomes vindos
- * de outra fonte (ex.: a tradução do TCGdex de uma busca em português).
- */
-export function searchCatalog(catalog: Catalog, query: string, alsoNames: string[] = []): LigaCard[] {
-  const q = normalize(query.trim())
+/** Busca por nome (a Liga usa os nomes em inglês). */
+export function searchCatalog(catalog: Catalog, query: string): LigaCard[] {
+  const q = compactName(query)
   if (q.length < 2) return []
-  const extra = new Set(alsoNames.map((n) => normalize(n)))
   const out: LigaCard[] = []
   for (let i = 0; i < catalog.cards.length; i++) {
     const n = catalog.searchNames[i]
-    if (n.includes(q) || extra.has(n)) out.push(catalog.cards[i])
+    if (n.includes(q)) out.push(catalog.cards[i])
   }
   return out.sort(byRecent)
 }
 
-/** Acha a carta da Liga equivalente a uma carta salva/do TCGdex (nome em inglês + número + total). */
+/** Acha a carta da Liga equivalente a uma carta salva (nome em inglês + número + total). */
 export function findLigaCard(
   catalog: Catalog,
   card: { name: string; name_en?: string | null; card_number: string | null; set_total: string | null },
 ): LigaCard | null {
   const num = plainNumber(card.card_number)
   if (!num) return null
-  const names = new Set([normalize(card.name_en ?? ''), normalize(card.name)].filter(Boolean))
+  const names = new Set([compactName(card.name_en ?? ''), compactName(card.name)].filter(Boolean))
   const total = plainNumber(card.set_total)
   const matches: LigaCard[] = []
   for (let i = 0; i < catalog.cards.length; i++) {

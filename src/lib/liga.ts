@@ -15,8 +15,8 @@ function encodeLiga(value: string): string {
 }
 
 /**
- * Número/total como impressos. O TCGdex dá o número já impresso ("018"), mas o total
- * como número (91); nas cartas com número com zeros o total é impresso com a mesma largura ("091").
+ * Número/total como impressos. Em cadastros manuais o total pode vir sem zeros (91); quando o número
+ * tem zeros à esquerda ("018"), o total é impresso com a mesma largura ("091").
  */
 export function printedNumber(number?: string | null, total?: string | null): string {
   const n = number?.trim() ?? ''
