@@ -5,6 +5,8 @@ import { useToast } from '../hooks/useToast'
 import type { AddSheetOptions } from '../hooks/useAddSheet'
 import { cx } from '../lib/cx'
 import { isValidUrl } from '../lib/liga'
+import { findLigaCard, loadCatalog, plainNumber, searchCatalog, type Catalog, type LigaCard } from '../lib/ligaCatalog'
+import { normalize } from '../lib/stats'
 import {
   getCard,
   getSets,
@@ -33,12 +35,29 @@ const MAX_RESULTS = 90
 
 type Step = 'search' | 'form'
 
+/** Identidade da carta a partir do catálogo da Liga (com a carta do TCGdex equivalente, se houver). */
+function ligaIdentity(card: LigaCard, tcg: TcgCardBrief | null): CardIdentity {
+  return {
+    tcgdex_id: tcg?.id ?? null,
+    name: tcg?.name ?? card.name,
+    name_en: card.name,
+    liga_image: card.image,
+    set_id: `liga:${card.edition.id}`,
+    set_name: card.edition.name,
+    card_number: card.num,
+    set_total: card.total,
+    image_url: tcg?.image ?? null,
+  }
+}
+
+const matchKey = (name: string, num: string | null | undefined) => `${normalize(name)}|${plainNumber(num)}`
+
 export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; onClose: () => void }) {
   const { addCard } = useCollection()
   const toast = useToast()
 
   const from = options.from
-  const [step, setStep] = useState<Step>(options.tcgdexId || from ? 'form' : 'search')
+  const [step, setStep] = useState<Step>(options.tcgdexId || options.liga || from ? 'form' : 'search')
   const [lang, setLang] = useState<TcgLang>('pt')
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<(SearchResult & { query: string }) | null>(null)
@@ -46,30 +65,48 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
   const [searchError, setSearchError] = useState(false)
   const [setNames, setSetNames] = useState<Map<string, TcgSetBrief>>(new Map())
 
-  const [selected, setSelected] = useState<CardIdentity | null>(from ?? null)
+  const [catalog, setCatalog] = useState<Catalog | null>(null)
+  const [catalogState, setCatalogState] = useState<'loading' | 'ok' | 'none'>('loading')
+  const [selected, setSelected] = useState<CardIdentity | null>(
+    from ?? (options.liga ? ligaIdentity(options.liga, null) : null),
+  )
   const [selectingId, setSelectingId] = useState<string | null>(options.tcgdexId ?? null)
-  const [manual, setManual] = useState(Boolean(from && !from.tcgdex_id))
+  const fromManual = Boolean(from && !from.tcgdex_id && !from.set_id?.startsWith('liga:'))
+  const [manual, setManual] = useState(fromManual)
 
   const [quantity, setQuantity] = useState(1)
   const [condition, setCondition] = useState<Condition>(from?.condition ?? 'NM')
   const [language, setLanguage] = useState<Language>(from?.language ?? 'PT')
   const [variant, setVariant] = useState<Variant>(from?.variant ?? 'Normal')
-  const [ligaUrl, setLigaUrl] = useState(from?.liga_url ?? '')
+  const [ligaUrl, setLigaUrl] = useState(from?.liga_url ?? options.liga?.url ?? '')
   const [notes, setNotes] = useState('')
   const [photo, setPhoto] = useState<Blob | null>(null)
   const [saving, setSaving] = useState(false)
 
   // Cadastro manual
-  const [mName, setMName] = useState(from && !from.tcgdex_id ? from.name : '')
-  const [mSet, setMSet] = useState(from && !from.tcgdex_id ? (from.set_name ?? '') : '')
-  const [mNumber, setMNumber] = useState(from && !from.tcgdex_id ? (from.card_number ?? '') : '')
-  const [mTotal, setMTotal] = useState(from && !from.tcgdex_id ? (from.set_total ?? '') : '')
+  const [mName, setMName] = useState(fromManual && from ? from.name : '')
+  const [mSet, setMSet] = useState(fromManual && from ? (from.set_name ?? '') : '')
+  const [mNumber, setMNumber] = useState(fromManual && from ? (from.card_number ?? '') : '')
+  const [mTotal, setMTotal] = useState(fromManual && from ? (from.set_total ?? '') : '')
 
   const searchInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (step === 'search') searchInput.current?.focus()
   }, [step])
+
+  // Catálogo da Liga (fonte principal da busca)
+  useEffect(() => {
+    let active = true
+    loadCatalog().then((c) => {
+      if (!active) return
+      setCatalog(c)
+      setCatalogState(c ? 'ok' : 'none')
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   // Nomes dos sets para exibir nos resultados
   useEffect(() => {
@@ -113,7 +150,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
     try {
       const card = await getCard(brief.id, result?.lang ?? lang)
       if (!card) throw new Error('Carta não encontrada')
-      setSelected({
+      const identity: CardIdentity = {
         tcgdex_id: card.id,
         name: card.name,
         name_en: card.nameEn ?? brief.nameEn ?? null,
@@ -122,7 +159,14 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
         card_number: card.localId,
         set_total: card.set.official ? String(card.set.official) : null,
         image_url: card.image,
-      })
+      }
+      // Achou a mesma carta no catálogo da Liga: usa a imagem e o link exato de lá.
+      const liga = catalog ? findLigaCard(catalog, identity) : null
+      if (liga) {
+        identity.liga_image = liga.image
+        setLigaUrl((v) => v || liga.url)
+      }
+      setSelected(identity)
     } catch {
       if (!brief.name) {
         toast.show('Não foi possível carregar a carta. Verifique a conexão.', 'error')
@@ -146,6 +190,13 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
     }
     setManual(false)
     setSelectingId(null)
+    setStep('form')
+  }
+
+  function chooseLiga(card: LigaCard, tcg: TcgCardBrief | null) {
+    setSelected(ligaIdentity(card, tcg))
+    setLigaUrl(card.url)
+    setManual(false)
     setStep('form')
   }
 
@@ -190,10 +241,32 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
     }
   }
 
-  const shown = useMemo(
-    () => (query.trim().length >= 2 ? (result?.cards.slice(0, MAX_RESULTS) ?? []) : []),
-    [result, query],
-  )
+  // Resultados: catálogo da Liga primeiro; TCGdex só com o que a Liga não tem.
+  const { ligaResults, tcgResults, ligaTotal } = useMemo(() => {
+    const q = query.trim()
+    if (q.length < 2) return { ligaResults: [], tcgResults: [], ligaTotal: 0 }
+    const tcgCards = result && result.query === q ? result.cards : []
+    // Busca em português: o TCGdex traduz para o nome em inglês usado pela Liga.
+    const englishNames = tcgCards.map((c) => c.nameEn ?? '').filter(Boolean)
+    const liga = catalog ? searchCatalog(catalog, q, englishNames) : []
+    const tcgByKey = new Map<string, TcgCardBrief>()
+    for (const c of tcgCards) {
+      const total = setNames.get(setIdFromCardId(c.id))?.official
+      tcgByKey.set(`${matchKey(c.nameEn ?? c.name, c.localId)}|${total ?? ''}`, c)
+    }
+    const used = new Set<TcgCardBrief>()
+    const ligaResults = liga.slice(0, MAX_RESULTS).map((card) => {
+      const tcg = tcgByKey.get(`${matchKey(card.name, card.num)}|${plainNumber(card.total)}`) ?? null
+      if (tcg) used.add(tcg)
+      return { card, tcg }
+    })
+    const ligaKeys = new Set(liga.map((c) => matchKey(c.name, c.num)))
+    const tcgResults = tcgCards
+      .filter((c) => !used.has(c) && !(catalog && ligaKeys.has(matchKey(c.nameEn ?? c.name, c.localId))))
+      .slice(0, MAX_RESULTS)
+    return { ligaResults, tcgResults, ligaTotal: liga.length }
+  }, [query, result, catalog, setNames])
+  const nothingYet = ligaResults.length === 0 && tcgResults.length === 0
 
   const title = from ? 'Duplicar carta' : 'Adicionar carta'
 
@@ -240,52 +313,84 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
             </div>
           </div>
 
-          {result?.fellBack && query.trim() === result.query && (
-            <p className="text-sm text-muted">Nada em português — mostrando resultados em inglês.</p>
-          )}
           {searchError && <p className="text-sm text-danger">Não foi possível buscar. Verifique a conexão.</p>}
 
-          {searching && shown.length === 0 ? (
+          {catalogState === 'none' && query.trim().length >= 2 && (
+            <p className="text-xs text-muted">Catálogo da Liga indisponível agora — mostrando só o TCGdex.</p>
+          )}
+
+          {(searching || catalogState === 'loading') && nothingYet && query.trim().length >= 2 ? (
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4" aria-busy="true" aria-label="Buscando">
               {Array.from({ length: 9 }, (_, i) => (
                 <div key={i} className="skeleton aspect-[63/88] rounded-[var(--radius-card)]" />
               ))}
             </div>
-          ) : shown.length > 0 ? (
+          ) : !nothingYet ? (
             <>
-              <ul className={cx('grid grid-cols-3 gap-x-3 gap-y-4 sm:grid-cols-4', searching && 'opacity-60')}>
-                {shown.map((c) => {
-                  const setId = setIdFromCardId(c.id)
-                  const isSel = selectingId === c.id || selected?.tcgdex_id === c.id
-                  return (
-                    <li key={c.id} className="min-w-0">
-                      <CardArt
-                        name={c.name}
-                        number={c.localId}
-                        image={c.image}
-                        onClick={() => void choose(c)}
-                        hrefLabel={`Selecionar ${c.name} ${c.localId}`}
-                        className={cx(isSel && 'ring-[3px] ring-accent ring-offset-2 ring-offset-bg')}
-                      >
-                        {selectingId === c.id && (
-                          <span className="absolute inset-0 flex items-center justify-center bg-black/40">
-                            <Loader2 size={22} className="animate-spin" aria-hidden />
-                          </span>
-                        )}
-                      </CardArt>
-                      <p className="mt-1.5 truncate text-xs font-semibold">{setNames.get(setId)?.name ?? setId}</p>
-                      <p className="truncate text-xs tabular-nums text-muted">nº {c.localId}</p>
-                    </li>
-                  )
-                })}
-              </ul>
-              {(result?.cards.length ?? 0) > MAX_RESULTS && (
-                <p className="text-center text-xs text-muted">
-                  Mostrando {MAX_RESULTS} de {result!.cards.length}. Refine a busca para encontrar mais rápido.
-                </p>
+              {ligaResults.length > 0 && (
+                <section aria-label="Resultados da LigaPokemon" className="flex flex-col gap-3">
+                  <ul className="grid grid-cols-3 gap-x-3 gap-y-4 sm:grid-cols-4">
+                    {ligaResults.map(({ card, tcg }) => (
+                      <li key={card.url} className="min-w-0">
+                        <CardArt
+                          name={card.name}
+                          number={card.num}
+                          total={card.total}
+                          ligaImage={card.image}
+                          image={tcg?.image}
+                          onClick={() => chooseLiga(card, tcg)}
+                          hrefLabel={`Selecionar ${card.label}, ${card.edition.name}`}
+                        />
+                        <p className="mt-1.5 truncate text-xs font-semibold">{card.edition.name}</p>
+                        <p className="truncate text-xs tabular-nums text-muted">
+                          {card.total ? `${card.num}/${card.total}` : `nº ${card.num}`}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                  {ligaTotal > MAX_RESULTS && (
+                    <p className="text-center text-xs text-muted">
+                      Mostrando {MAX_RESULTS} de {ligaTotal}. Refine a busca (ex.: "Pikachu ex").
+                    </p>
+                  )}
+                </section>
+              )}
+
+              {tcgResults.length > 0 && (
+                <section aria-label="Outras fontes" className={cx('flex flex-col gap-3', searching && 'opacity-60')}>
+                  {ligaResults.length > 0 && (
+                    <h3 className="mt-2 text-sm font-bold text-muted">Outras fontes (TCGdex)</h3>
+                  )}
+                  <ul className="grid grid-cols-3 gap-x-3 gap-y-4 sm:grid-cols-4">
+                    {tcgResults.map((c) => {
+                      const setId = setIdFromCardId(c.id)
+                      const isSel = selectingId === c.id
+                      return (
+                        <li key={c.id} className="min-w-0">
+                          <CardArt
+                            name={c.name}
+                            number={c.localId}
+                            image={c.image}
+                            onClick={() => void choose(c)}
+                            hrefLabel={`Selecionar ${c.name} ${c.localId}`}
+                            className={cx(isSel && 'ring-[3px] ring-accent ring-offset-2 ring-offset-bg')}
+                          >
+                            {isSel && (
+                              <span className="absolute inset-0 flex items-center justify-center bg-black/40">
+                                <Loader2 size={22} className="animate-spin" aria-hidden />
+                              </span>
+                            )}
+                          </CardArt>
+                          <p className="mt-1.5 truncate text-xs font-semibold">{setNames.get(setId)?.name ?? setId}</p>
+                          <p className="truncate text-xs tabular-nums text-muted">nº {c.localId}</p>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </section>
               )}
             </>
-          ) : query.trim().length >= 2 && result && !searching ? (
+          ) : query.trim().length >= 2 && !searching ? (
             <p className="py-6 text-center text-sm text-muted">Nenhuma carta encontrada com esse nome.</p>
           ) : (
             <p className="py-6 text-center text-sm text-muted">Digite pelo menos 2 letras do nome da carta.</p>
@@ -366,6 +471,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
                   number={selected.card_number}
                   total={selected.set_total}
                   image={selected.image_url}
+                  ligaImage={selected.liga_image}
                   className="ring-[3px] ring-accent ring-offset-2 ring-offset-bg"
                 />
               </div>

@@ -6,21 +6,72 @@ import { useAddSheet } from '../hooks/useAddSheet'
 import { useCollection } from '../hooks/useCollection'
 import { goBack, navigate } from '../hooks/useRoute'
 import { ligaCardUrl, ligaUrlFor } from '../lib/liga'
-import { sortCards } from '../lib/stats'
+import { normalize, sortCards } from '../lib/stats'
+import { loadCatalog, plainNumber, type LigaCard } from '../lib/ligaCatalog'
 import { getSet, type TcgSet } from '../lib/tcgdex'
 import { cardKey, setKeyOf, type Card } from '../lib/types'
 
 type Filter = 'all' | 'have' | 'missing'
 
-interface Slot {
+/** Carta de um set completo, venha do TCGdex ou do catálogo da Liga. */
+interface RemoteCard {
   id: string
+  localId: string
   name: string
-  /** Nome em inglês, para o link da Liga */
   nameEn: string
-  number: string
   image: string | null
+  ligaImage: string | null
+  liga: LigaCard | null
+}
+
+interface RemoteSet {
+  name: string
+  official: number | null
+  cards: RemoteCard[]
+}
+
+interface Slot extends RemoteCard {
   owned: Card[]
   quantity: number
+}
+
+function fromTcgdex(set: TcgSet): RemoteSet {
+  return {
+    name: set.name,
+    official: set.official || null,
+    cards: set.cards.map((t) => ({
+      id: t.id,
+      localId: t.localId,
+      name: t.name,
+      nameEn: t.nameEn ?? t.name,
+      image: t.image,
+      ligaImage: null,
+      liga: null,
+    })),
+  }
+}
+
+async function fromLiga(editionId: number): Promise<RemoteSet | null> {
+  const catalog = await loadCatalog()
+  const edition = catalog?.editionById.get(editionId)
+  if (!catalog || !edition) return null
+  const cards = (catalog.byEdition.get(editionId) ?? [])
+    .slice()
+    .sort((a, b) => a.num.localeCompare(b.num, undefined, { numeric: true }))
+  const totals = cards.map((c) => parseInt(c.total ?? '', 10)).filter((n) => n > 0)
+  return {
+    name: edition.name,
+    official: totals.length ? Math.min(...totals) : null,
+    cards: cards.map((c) => ({
+      id: c.url,
+      localId: c.num,
+      name: c.name,
+      nameEn: c.name,
+      image: null,
+      ligaImage: c.image,
+      liga: c,
+    })),
+  }
 }
 
 export function SetDetailScreen({ setKey }: { setKey: string }) {
@@ -28,13 +79,16 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
   const openAdd = useAddSheet()
   const [filter, setFilter] = useState<Filter>('all')
   const isManual = setKey.startsWith('manual:')
-  const [remote, setRemote] = useState<{ key: string; set: TcgSet | null; error: boolean } | null>(null)
+  const [remote, setRemote] = useState<{ key: string; set: RemoteSet | null; error: boolean } | null>(null)
 
   useEffect(() => {
     if (isManual) return
     let active = true
-    getSet(setKey)
-      .then((set) => active && setRemote({ key: setKey, set, error: false }))
+    const load = setKey.startsWith('liga:')
+      ? fromLiga(Number(setKey.slice(5)))
+      : getSet(setKey).then((set) => (set ? fromTcgdex(set) : null))
+    load
+      .then((set) => active && setRemote({ key: setKey, set, error: !set }))
       .catch(() => active && setRemote({ key: setKey, set: null, error: true }))
     return () => {
       active = false
@@ -43,28 +97,26 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
 
   const owned = useMemo(() => cards.filter((c) => setKeyOf(c) === setKey), [cards, setKey])
   const current = remote?.key === setKey ? remote : null
-  const tcgSet = current?.set ?? null
+  const remoteSet = current?.set ?? null
   const loading = !isManual && !current
 
   const slots = useMemo<Slot[]>(() => {
-    if (tcgSet) {
+    if (remoteSet) {
       const byId = new Map<string, Card[]>()
       const byNumber = new Map<string, Card[]>()
       for (const c of owned) {
-        if (c.tcgdex_id) byId.set(c.tcgdex_id, [...(byId.get(c.tcgdex_id) ?? []), c])
-        else if (c.card_number) byNumber.set(c.card_number, [...(byNumber.get(c.card_number) ?? []), c])
-      }
-      return tcgSet.cards.map((t) => {
-        const mine = [...(byId.get(t.id) ?? []), ...(byNumber.get(t.localId) ?? [])]
-        return {
-          id: t.id,
-          name: t.name,
-          nameEn: t.nameEn ?? t.name,
-          number: t.localId,
-          image: t.image,
-          owned: mine,
-          quantity: mine.reduce((n, c) => n + c.quantity, 0),
+        if (c.tcgdex_id && !c.set_id?.startsWith('liga:')) byId.set(c.tcgdex_id, [...(byId.get(c.tcgdex_id) ?? []), c])
+        else if (c.card_number) {
+          const k = plainNumber(c.card_number)
+          byNumber.set(k, [...(byNumber.get(k) ?? []), c])
         }
+      }
+      return remoteSet.cards.map((t) => {
+        // Na Liga o número pode se repetir entre versões da mesma edição: confere o nome também.
+        const mine = [...(byId.get(t.id) ?? []), ...(byNumber.get(plainNumber(t.localId)) ?? [])].filter(
+          (c) => !t.liga || normalize(c.name_en ?? c.name) === normalize(t.name),
+        )
+        return { ...t, owned: mine, quantity: mine.reduce((n, c) => n + c.quantity, 0) }
       })
     }
     // Set manual ou sem conexão: mostra só o que tenho.
@@ -72,17 +124,19 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
     for (const c of sortCards(owned, 'number')) groups.set(cardKey(c), [...(groups.get(cardKey(c)) ?? []), c])
     return [...groups.entries()].map(([k, list]) => ({
       id: k,
+      localId: list[0].card_number ?? '',
       name: list[0].name,
       nameEn: list[0].name_en ?? list[0].name,
-      number: list[0].card_number ?? '',
       image: list[0].image_url,
+      ligaImage: list[0].liga_image ?? null,
+      liga: null,
       owned: list,
       quantity: list.reduce((n, c) => n + c.quantity, 0),
     }))
-  }, [tcgSet, owned])
+  }, [remoteSet, owned])
 
-  const name = tcgSet?.name ?? owned[0]?.set_name ?? (isManual ? setKey.slice(7) : setKey)
-  const official = tcgSet?.official ?? (parseInt(owned[0]?.set_total ?? '', 10) || null)
+  const name = remoteSet?.name ?? owned[0]?.set_name ?? (isManual ? setKey.slice(7) : setKey)
+  const official = remoteSet?.official ?? (parseInt(owned[0]?.set_total ?? '', 10) || null)
   const ownedCount = new Set(owned.map(cardKey)).size
   const visible = slots.filter((s) => (filter === 'all' ? true : filter === 'have' ? s.quantity > 0 : s.quantity === 0))
 
@@ -122,7 +176,7 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
 
       {current?.error && (
         <p className="mt-4 flex items-center gap-2 rounded-2xl border border-line bg-surface p-3 text-sm text-muted">
-          <CloudOff size={16} aria-hidden /> Sem conexão com o TCGdex: mostrando só as cartas que você tem.
+          <CloudOff size={16} aria-hidden /> Não consegui carregar o set completo: mostrando só as cartas que você tem.
         </p>
       )}
 
@@ -147,12 +201,15 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
                   <div className={have ? '' : 'opacity-35 grayscale'}>
                     <CardArt
                       name={s.name}
-                      number={s.number}
+                      number={s.localId}
                       total={official ? String(official) : null}
-                      image={s.image}
+                      image={s.image ?? first?.image_url}
+                      ligaImage={s.ligaImage ?? first?.liga_image}
                       photoPath={first?.photo_path}
                       href={
-                        first ? ligaUrlFor(first) : ligaCardUrl(s.nameEn, s.number, official ? String(official) : null)
+                        first
+                          ? ligaUrlFor(first)
+                          : (s.liga?.url ?? ligaCardUrl(s.nameEn, s.localId, official ? String(official) : null))
                       }
                       onLongPress={first ? () => navigate({ name: 'card', id: first.id }) : undefined}
                       missing={!have}
@@ -167,8 +224,8 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
                   {!have && (
                     <button
                       type="button"
-                      onClick={() => openAdd({ tcgdexId: s.id })}
-                      aria-label={`Adicionar ${s.name} (${s.number})`}
+                      onClick={() => openAdd(s.liga ? { liga: s.liga } : { tcgdexId: s.id })}
+                      aria-label={`Adicionar ${s.name} (${s.localId})`}
                       className="absolute bottom-1 right-1 flex size-11 items-center justify-center"
                     >
                       <span className="flex size-8 items-center justify-center rounded-full bg-accent text-ink shadow-lg">
@@ -178,7 +235,7 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
                   )}
                 </div>
                 <p className="mt-1 truncate text-center text-[11px] font-semibold tabular-nums text-muted">
-                  {s.number}
+                  {s.localId}
                 </p>
               </li>
             )

@@ -66,7 +66,7 @@ function Detail({ card }: { card: Card }) {
   const openAdd = useAddSheet()
   const toast = useToast()
   const photo = usePhotoUrl(card.photo_path)
-  const hasOfficial = Boolean(card.image_url)
+  const hasOfficial = Boolean(card.liga_image || card.image_url)
   const [showPhoto, setShowPhoto] = useState(!hasOfficial)
   const [link, setLink] = useState(card.liga_url ?? '')
   const [notes, setNotes] = useState(card.notes ?? '')
@@ -117,6 +117,7 @@ function Detail({ card }: { card: Card }) {
           number={card.card_number}
           total={card.set_total}
           image={card.image_url}
+          ligaImage={card.liga_image}
           photoPath={card.photo_path}
           prefer={showPhoto ? 'photo' : 'official'}
           quality="high"

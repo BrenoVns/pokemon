@@ -34,6 +34,8 @@ export interface Card {
   set_total: string | null
   /** URL base do TCGdex (sem /low.webp ou /high.webp) */
   image_url: string | null
+  /** Imagem da carta no repositório da LigaPokemon (versão em português) */
+  liga_image?: string | null
   /** Chave da foto própria no armazenamento local (IndexedDB) */
   photo_path: string | null
   liga_url: string | null
@@ -49,7 +51,7 @@ export interface Card {
 /** Campos que identificam "a mesma carta" (independente de condição/idioma/variante). */
 export type CardIdentity = Pick<
   Card,
-  'tcgdex_id' | 'name' | 'name_en' | 'set_id' | 'set_name' | 'card_number' | 'set_total' | 'image_url'
+  'tcgdex_id' | 'name' | 'name_en' | 'liga_image' | 'set_id' | 'set_name' | 'card_number' | 'set_total' | 'image_url'
 >
 
 /** Espelho da coluna gerada card_key do banco. */

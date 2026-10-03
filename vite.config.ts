@@ -36,6 +36,12 @@ export default defineConfig({
         navigateFallback: `${base}index.html`,
         runtimeCaching: [
           {
+            // Catálogo da Liga: usa o salvo na hora e atualiza em segundo plano.
+            urlPattern: ({ url }) => url.pathname.endsWith('/liga/catalog.json'),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'liga-catalog', cacheableResponse: { statuses: [200] } },
+          },
+          {
             urlPattern: ({ url }) => url.origin === 'https://assets.tcgdex.net',
             handler: 'CacheFirst',
             options: {

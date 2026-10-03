@@ -27,6 +27,7 @@ export function ShowcaseGrid({ cards }: { cards: Card[] }) {
             number={c.card_number}
             total={c.set_total}
             image={c.image_url}
+            ligaImage={c.liga_image}
             photoPath={c.photo_path}
             href={ligaUrlFor(c)}
             onLongPress={() => openDetail(c)}
@@ -67,6 +68,7 @@ export function GalleryGrid({ cards }: { cards: Card[] }) {
             number={c.card_number}
             total={c.set_total}
             image={c.image_url}
+            ligaImage={c.liga_image}
             photoPath={c.photo_path}
             href={ligaUrlFor(c)}
             onLongPress={() => openDetail(c)}
@@ -134,6 +136,7 @@ function ListRow({ card: c }: { card: Card }) {
           number={c.card_number}
           total={c.set_total}
           image={c.image_url}
+          ligaImage={c.liga_image}
           photoPath={c.photo_path}
           href={liga}
           className="rounded-md"

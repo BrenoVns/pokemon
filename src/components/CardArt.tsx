@@ -12,6 +12,8 @@ interface CardArtProps {
   total?: string | null
   /** URL base do TCGdex */
   image?: string | null
+  /** Imagem da LigaPokemon (tem prioridade; o TCGdex fica de reserva) */
+  ligaImage?: string | null
   /** Caminho da foto própria no Storage */
   photoPath?: string | null
   /** 'official' prefere a arte do TCGdex; 'photo' prefere a foto própria */
@@ -61,6 +63,7 @@ export function CardArt({
   number,
   total,
   image,
+  ligaImage,
   photoPath,
   prefer = 'official',
   quality = 'low',
@@ -75,14 +78,21 @@ export function CardArt({
   children,
 }: CardArtProps) {
   const photo = usePhotoUrl(photoPath)
-  const official = imageUrl(image, quality)
+  const tcgdex = imageUrl(image, quality)
+  const official = ligaImage ?? tcgdex
   const src = prefer === 'photo' ? (photo.url ?? official) : (official ?? photo.url)
   const [loaded, setLoaded] = useState<string | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   // O servidor de imagens do TCGdex às vezes responde 503: tentamos de novo e,
   // se continuar falhando, usamos a mesma arte no outro idioma.
   const [attempt, setAttempt] = useState<{ src: string; index: number } | null>(null)
-  const candidates = src ? imageCandidates(src) : []
+  // Liga primeiro; se falhar, as artes do TCGdex.
+  const candidates =
+    src === official && official
+      ? [...(ligaImage ? [ligaImage] : []), ...(tcgdex ? imageCandidates(tcgdex) : [])]
+      : src
+        ? [src]
+        : []
   const attemptIndex = attempt && attempt.src === src ? attempt.index : 0
   const shownSrc = candidates[attemptIndex] ?? src
   // A cor sai sempre da versão leve (já em cache pela grade).

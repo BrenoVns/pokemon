@@ -105,6 +105,7 @@ export function parseBackup(text: string): Backup {
       card_number: str(r.card_number),
       set_total: str(r.set_total),
       image_url: str(r.image_url),
+      liga_image: str(r.liga_image),
       photo_path: str(r.photo_path),
       liga_url: str(r.liga_url),
       quantity: Math.max(1, Math.round(Number(r.quantity) || 1)),
