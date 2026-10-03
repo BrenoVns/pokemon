@@ -26,6 +26,8 @@ export interface Card {
   collection_id: string
   tcgdex_id: string | null
   name: string
+  /** Nome em inglês, usado no link da LigaPokemon (null no cadastro manual) */
+  name_en: string | null
   set_id: string | null
   set_name: string | null
   card_number: string | null
@@ -47,7 +49,7 @@ export interface Card {
 /** Campos que identificam "a mesma carta" (independente de condição/idioma/variante). */
 export type CardIdentity = Pick<
   Card,
-  'tcgdex_id' | 'name' | 'set_id' | 'set_name' | 'card_number' | 'set_total' | 'image_url'
+  'tcgdex_id' | 'name' | 'name_en' | 'set_id' | 'set_name' | 'card_number' | 'set_total' | 'image_url'
 >
 
 /** Espelho da coluna gerada card_key do banco. */

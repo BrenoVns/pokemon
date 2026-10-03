@@ -99,6 +99,7 @@ export function parseBackup(text: string): Backup {
       collection_id: str(r.collection_id) ?? '',
       tcgdex_id: str(r.tcgdex_id),
       name: str(r.name)!,
+      name_en: str(r.name_en),
       set_id: str(r.set_id),
       set_name: str(r.set_name),
       card_number: str(r.card_number),

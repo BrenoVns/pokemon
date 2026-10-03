@@ -116,6 +116,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
       setSelected({
         tcgdex_id: card.id,
         name: card.name,
+        name_en: card.nameEn ?? brief.nameEn ?? null,
         set_id: card.set.id,
         set_name: card.set.name,
         card_number: card.localId,
@@ -135,6 +136,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
       setSelected({
         tcgdex_id: brief.id,
         name: brief.name,
+        name_en: brief.nameEn ?? null,
         set_id: setId,
         set_name: set?.name ?? setId,
         card_number: brief.localId,
@@ -153,6 +155,7 @@ export function AddCardSheet({ options, onClose }: { options: AddSheetOptions; o
       ? {
           tcgdex_id: null,
           name: mName.trim(),
+          name_en: null,
           set_id: null,
           set_name: mSet.trim() || null,
           card_number: mNumber.trim() || null,

@@ -15,6 +15,8 @@ type Filter = 'all' | 'have' | 'missing'
 interface Slot {
   id: string
   name: string
+  /** Nome em inglês, para o link da Liga */
+  nameEn: string
   number: string
   image: string | null
   owned: Card[]
@@ -57,6 +59,7 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
         return {
           id: t.id,
           name: t.name,
+          nameEn: t.nameEn ?? t.name,
           number: t.localId,
           image: t.image,
           owned: mine,
@@ -70,6 +73,7 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
     return [...groups.entries()].map(([k, list]) => ({
       id: k,
       name: list[0].name,
+      nameEn: list[0].name_en ?? list[0].name,
       number: list[0].card_number ?? '',
       image: list[0].image_url,
       owned: list,
@@ -148,7 +152,7 @@ export function SetDetailScreen({ setKey }: { setKey: string }) {
                       image={s.image}
                       photoPath={first?.photo_path}
                       href={
-                        first ? ligaUrlFor(first) : ligaCardUrl(s.name, s.number, official ? String(official) : null)
+                        first ? ligaUrlFor(first) : ligaCardUrl(s.nameEn, s.number, official ? String(official) : null)
                       }
                       onLongPress={first ? () => navigate({ name: 'card', id: first.id }) : undefined}
                       missing={!have}

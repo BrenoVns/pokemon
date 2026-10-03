@@ -4,6 +4,7 @@ import { useToast } from '../hooks/useToast'
 import { dataUrlToBlob } from '../lib/backup'
 import { idbGet, idbSet } from '../lib/idb'
 import { deletePhoto, newPhotoPath, savePhoto } from '../lib/photos'
+import { getCard } from '../lib/tcgdex'
 import { comboKey, type Card, type Collection } from '../lib/types'
 
 // Tudo fica no próprio aparelho (IndexedDB). O formato já prevê várias coleções.
@@ -38,10 +39,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     ;(async () => {
       // Pede ao navegador para não apagar os dados quando faltar espaço.
       void navigator.storage?.persist?.()
-      const [savedCards, savedCol] = await Promise.all([
-        idbGet<Card[]>(CARDS_KEY),
-        idbGet<Collection>(COLLECTION_KEY),
-      ])
+      const [savedCards, savedCol] = await Promise.all([idbGet<Card[]>(CARDS_KEY), idbGet<Collection>(COLLECTION_KEY)])
       if (!active) return
       let col = savedCol
       if (!col) {
@@ -58,6 +56,26 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       active = false
     }
   }, [])
+
+  /** Cartas salvas antes de guardarmos o nome em inglês: busca no TCGdex (usado no link da Liga). */
+  const fillEnglishNames = useCallback(async () => {
+    const missing = cardsRef.current.filter((c) => c.tcgdex_id && c.name_en === undefined)
+    for (const c of missing) {
+      try {
+        const en = await getCard(c.tcgdex_id!, 'en')
+        if (!en) continue
+        const name_en = en.lang === 'en' ? en.name : null
+        cardsRef.current = cardsRef.current.map((x) => (x.id === c.id ? { ...x, name_en } : x))
+      } catch {
+        return // offline: tenta na próxima abertura
+      }
+    }
+    if (missing.length) commitCards(cardsRef.current)
+  }, [commitCards])
+
+  useEffect(() => {
+    if (!loading) void fillEnglishNames()
+  }, [loading, fillEnglishNames])
 
   const attachPhoto = useCallback(async (card: Card, blob: Blob): Promise<Card> => {
     const path = newPhotoPath(card.id)

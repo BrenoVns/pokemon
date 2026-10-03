@@ -11,6 +11,8 @@ export interface TcgCardBrief {
   localId: string
   name: string
   image: string | null
+  /** Nome em inglês (é o que a LigaPokemon usa nos links), quando conhecido */
+  nameEn?: string
 }
 
 export interface TcgSetBrief {
@@ -146,12 +148,19 @@ async function rawSearch(name: string, lang: TcgLang): Promise<TcgCardBrief[]> {
 }
 
 /** Une duas listas pelo id: mantém a versão preferida e acrescenta as que só existem na outra. */
-function mergeById(preferred: TcgCardBrief[], other: TcgCardBrief[]): TcgCardBrief[] {
-  const otherImages = new Map(other.map((c) => [c.id, c.image]))
+function mergeById(preferred: TcgCardBrief[], other: TcgCardBrief[], preferredLang: TcgLang): TcgCardBrief[] {
+  const byId = new Map(other.map((c) => [c.id, c]))
   const seen = new Set(preferred.map((c) => c.id))
   return [
-    ...preferred.map((c) => (c.image ? c : { ...c, image: otherImages.get(c.id) ?? null })),
-    ...other.filter((c) => !seen.has(c.id)),
+    ...preferred.map((c) => {
+      const o = byId.get(c.id)
+      return {
+        ...c,
+        image: c.image ?? o?.image ?? null,
+        nameEn: preferredLang === 'en' ? c.name : o?.name,
+      }
+    }),
+    ...other.filter((c) => !seen.has(c.id)).map((c) => ({ ...c, nameEn: preferredLang === 'en' ? undefined : c.name })),
   ]
 }
 
@@ -177,7 +186,7 @@ export async function searchCards(query: string, lang: TcgLang): Promise<SearchR
     rawSearch(q, otherLang(lang)).catch(() => [] as TcgCardBrief[]),
     releaseOrder(),
   ])
-  const cards = mergeById(mine, other)
+  const cards = mergeById(mine, other, lang)
   const rank = (c: TcgCardBrief) => order.get(setIdFromCardId(c.id)) ?? -1
   cards.sort((a, b) => rank(b) - rank(a) || a.localId.localeCompare(b.localId, undefined, { numeric: true }))
   return { lang, cards, fellBack: mine.length === 0 && cards.length > 0 }
@@ -194,6 +203,14 @@ export async function getCard(id: string, lang: TcgLang = 'pt'): Promise<TcgCard
   }
   if (!raw) return null
   const card: TcgCard = { ...toBrief(raw), lang: usedLang, set: toSetBrief(raw.set) }
+  if (usedLang === 'en') card.nameEn = card.name
+  else {
+    try {
+      card.nameEn = (await fetchJson<RawCard>(`/en/cards/${enc}`))?.name ?? undefined
+    } catch {
+      // sem nome em inglês
+    }
+  }
   if (usedLang !== lang) {
     // Carta só existe no outro idioma: usa o nome do set no idioma pedido, se houver.
     try {
@@ -223,7 +240,7 @@ export async function getSet(setId: string, lang: TcgLang = 'pt'): Promise<TcgSe
   ])
   const base = mine ?? other
   if (!base) return null
-  const cards = mergeById((mine?.cards ?? []).map(toBrief), (other?.cards ?? []).map(toBrief))
+  const cards = mergeById((mine?.cards ?? []).map(toBrief), (other?.cards ?? []).map(toBrief), lang)
   cards.sort((a, b) => a.localId.localeCompare(b.localId, undefined, { numeric: true }))
   return { ...toSetBrief(base), lang: mine ? lang : otherLang(lang), cards }
 }

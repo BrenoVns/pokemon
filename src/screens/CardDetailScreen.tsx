@@ -18,7 +18,7 @@ import { usePhotoUrl } from '../hooks/usePhotoUrl'
 import { goBack, navigate } from '../hooks/useRoute'
 import { useToast } from '../hooks/useToast'
 import { cx } from '../lib/cx'
-import { isValidUrl, ligaCardUrl, ligaSearchUrl, ligaUrlFor } from '../lib/liga'
+import { isValidUrl, ligaCardUrl, ligaName, ligaSearchUrl, ligaUrlFor } from '../lib/liga'
 import { CONDITION_LABELS, CONDITIONS, LANGUAGES, VARIANTS, type Card } from '../lib/types'
 
 export function CardDetailScreen({ id }: { id: string }) {
@@ -159,7 +159,7 @@ function Detail({ card }: { card: Card }) {
           Ver preço na LigaPokemon <ExternalLink size={18} aria-hidden />
         </a>
         <a
-          href={ligaSearchUrl(card.name)}
+          href={ligaSearchUrl(ligaName(card))}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold text-muted hover:text-fg"
@@ -212,7 +212,7 @@ function Detail({ card }: { card: Card }) {
           <p className="break-all text-xs leading-relaxed text-muted">
             {card.liga_url
               ? 'Usando o link colado.'
-              : `Automático: ${ligaCardUrl(card.name, card.card_number, card.set_total)}`}
+              : `Automático: ${ligaCardUrl(ligaName(card), card.card_number, card.set_total)}`}
           </p>
         </Row>
         <Row label="Notas" stacked>
